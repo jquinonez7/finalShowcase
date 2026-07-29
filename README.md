@@ -18,36 +18,43 @@ Our project aims to raise awareness about mental health issues and foster meanin
 
 Built With React
 
-Getting Started
-This is an example of how you may give instructions on setting up your project locally. To get a local copy up and running, follow these simple example steps.
-
+## Getting Started
+Here are a few simple steps to get our project running on your computer.
 ### Prerequisites
+1. Fork & Clone
+ * Fork the above repository, then clone the copy to your computer.
+```bash
+git clone https://github.com/jackiepantoja78/sea-academy-catalog.git
+```
 
-We use **Expo** for the React Native app framework and **Supabase** as our backend/database solution.
+2. Set Up Supabase
+ * Create a free project at https://supabase.com
+ * In your project, go to **Settings → API** and copy the **Project URL**
+   and the **anon/public key**
+ * Create an `.env.local` on the root. Paste in the following keys with YOUR values.
 
-* **npm**
-  ```sh
-  npm install npm@latest -g
-  
-git clone [https://github.com/your_username/your_repo_name.git](https://github.com/your_username/your_repo_name.git)
-cd your_repo_name
+```js
+const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
+const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+```
 
-npm
-npm install npm@latest -g
-Installation
-Get a free API Key at https://example.com
-Clone the repo
-git clone https://github.com/github_username/repo_name.git
-Install NPM packages
+ * In Supabase, go to **Authentication →
+   Settings** you may want to turn **off** "Confirm email" so users can
+   sign up and log straight in without checking an inbox.
+
+### Install & Run
+1. Run these commands to launch app
+
+```bash
 npm install
-Enter your API in config.js
-const API_KEY = "ENTER YOUR API";
-Change git remote url to avoid accidental pushes to base project
-git remote set-url origin github_username/repo_name
-git remote -v # confirm the changes
-(back to top)
+npx expo start
+```
 
-Usage
+Scan the QR code with the **Expo Go** app (SDK 54 build) on your phone.
+Camera access requires a physical device or a simulator with camera
+support — it will not work in the web preview. Please allow Expo Go to access your camera
+
+## Usage
 Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
 
 (back to top)
