@@ -1,19 +1,19 @@
 # About The Project
 
-Our project aims to raise awareness about mental health issues and foster meaningful social connections. Designed as a comprehensive mental health hub, the platform helps users stay connected with their support network while providing interactive tools for personal reflection and emotional processing.
+Our project aims to raise awareness about mental health issues and foster meaningful social connections directly within Snapchat. Built as a integrated mental health hub, this feature helps Snapchatters stay connected with their support network while providing interactive tools for personal reflection and emotional processing.
 
 ## Key Features
 
 * **Proactive Friend Check-Ins**
-  * Automatically sends gentle reminders to reach out if you haven't interacted with someone on your close friends list in the past 48 hours.
-  * Helps maintain consistent, supportive relationships without the mental burden of tracking touchpoints.
+  * Automatically sends gentle reminders to reach out if you haven't interacted with someone on your Snapchat best friends list in the past 48 hours.
+  * Helps maintain consistent, supportive relationships without the mental burden of keeping track of when you last talked.
 
 * **Interactive Video Diaries**
-  * Express thoughts and feelings through video reflection entries.
+  * Capture video reflections using Snapchat's camera interface.
   * Flexible post-recording actions to suit your current emotional state:
     * **"Let Go"** — Instantly delete the video entry as a symbolic release of negative emotions.
-    * **"Ask for Advice"** — Share the recording directly with a trusted friend for support.
-    * **"Save to Diary"** — Store the entry tagged by mood (e.g., *Grateful*, *Hopeful*, *Resilient*) to revisit later as a source of personal encouragement and motivation.
+    * **"Ask for Advice"** — Share the Snap directly with a trusted friend for advice and support.
+    * **"Save to Diary"** — Store the video tagged by mood (e.g., *Grateful*, *Hopeful*, *Resilient*) to revisit later as a source of personal encouragement and motivation.
 
 
 Built With React
@@ -21,8 +21,16 @@ Built With React
 Getting Started
 This is an example of how you may give instructions on setting up your project locally. To get a local copy up and running, follow these simple example steps.
 
-Prerequisites
-This is an example of how to list things you need to use the software and how to install them.
+### Prerequisites
+
+We use **Expo** for the React Native app framework and **Supabase** as our backend/database solution.
+
+* **npm**
+  ```sh
+  npm install npm@latest -g
+  
+git clone [https://github.com/your_username/your_repo_name.git](https://github.com/your_username/your_repo_name.git)
+cd your_repo_name
 
 npm
 npm install npm@latest -g
