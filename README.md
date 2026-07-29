@@ -1,17 +1,19 @@
-About The Project
-Our project aims to raise awareness about mental health and foster meaningful social connection. Designed as an all-in-one mental health hub, the platform helps you stay close to the people who matter most while offering tools for personal reflection.
+# About The Project
 
-Key Features:
+Our project aims to raise awareness about mental health issues and foster meaningful social connections. Designed as a comprehensive mental health hub, the platform helps users stay connected with their support network while providing interactive tools for personal reflection and emotional processing.
 
-Proactive Check-Ins: Automatically reminds you to reach out if you haven't interacted with a close friend in over two days.
+## Key Features
 
-Video Diaries: Allows you to capture video reflections with three flexible options:
+* **Proactive Friend Check-Ins**
+  * Automatically sends gentle reminders to reach out if you haven't interacted with someone on your close friends list in the past 48 hours.
+  * Helps maintain consistent, supportive relationships without the mental burden of tracking touchpoints.
 
-"Let Go": Permanently delete the entry to release negative thoughts.
-
-"Ask for Advice": Share your entry directly with a trusted friend.
-
-"Save to Diary": Archive your entry with mood tags to revisit later for future encouragement and motivation.
+* **Interactive Video Diaries**
+  * Express thoughts and feelings through video reflection entries.
+  * Flexible post-recording actions to suit your current emotional state:
+    * **"Let Go"** — Instantly delete the video entry as a symbolic release of negative emotions.
+    * **"Ask for Advice"** — Share the recording directly with a trusted friend for support.
+    * **"Save to Diary"** — Store the entry tagged by mood (e.g., *Grateful*, *Hopeful*, *Resilient*) to revisit later as a source of personal encouragement and motivation.
 
 
 Built With React
