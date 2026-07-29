@@ -1,60 +1,46 @@
-# Snap Clone — Starter Project
+About The Project
+Our project aims to raise awareness about mental health and foster meaningful social connection. Designed as an all-in-one mental health hub, the platform helps you stay close to the people who matter most while offering tools for personal reflection.
 
-A minimal Snapchat-look-alike starter fullstack mobile dev.
-It ships with exactly two things working end-to-end:
+Key Features:
 
-1. A Snapchat-styled **login/sign-up screen** (Supabase Auth, email + password)
-2. A **full-screen camera** that opens right after login (Expo Camera —
-   capture photo, flip camera, toggle flash, preview + retake)
+Proactive Check-Ins: Automatically reminds you to reach out if you haven't interacted with a close friend in over two days.
 
-Everything else — Stories, chat, friends, disappearing snaps, sending a
-snap to someone — is left as an exercise. There's a `TODO (students)` comment
-in `src/screens/CameraScreen.tsx` and `src/lib/supabase.ts` marking the two
-places you'll extend first.
+Video Diaries: Allows you to capture video reflections with three flexible options:
 
-## Tech stack
+"Let Go": Permanently delete the entry to release negative thoughts.
 
-- Expo **SDK 54** (pinned — required for this to work in current Expo Go)
-- React Native 0.81 / React 19
-- Written in Javascript but is scaffolded to be refactor in TypeScript
-- Supabase (`@supabase/supabase-js`) for auth + database
-- `expo-camera` for the camera
-- `@react-navigation/native` + `native-stack` are pre-installed (not wired up
-  yet) — you'll want these once you add more screens (chat, stories, profile)
+"Ask for Advice": Share your entry directly with a trusted friend.
 
-## 1. Set up Supabase
+"Save to Diary": Archive your entry with mood tags to revisit later for future encouragement and motivation.
 
-1. Create a free project at https://supabase.com
-2. In your project, go to **Settings → API** and copy the **Project URL**
-   and the **anon/public key**
-3. Create an `.env.local` on the root. Paste in the following keys with YOUR values.
 
-```js
-const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
-```
+Built With React
 
-4. In Supabase, go to **Authentication → Providers** and make sure
-   **Email** is `not` enabled. Under **Authentication →
-   Settings** you may want to turn **off** "Confirm email" so users can
-   sign up and log straight in without checking an inbox.
+Getting Started
+This is an example of how you may give instructions on setting up your project locally. To get a local copy up and running, follow these simple example steps.
 
-## 2. Install & run
+Prerequisites
+This is an example of how to list things you need to use the software and how to install them.
 
-```bash
+npm
+npm install npm@latest -g
+Installation
+Get a free API Key at https://example.com
+Clone the repo
+git clone https://github.com/github_username/repo_name.git
+Install NPM packages
 npm install
-npx expo start
-```
+Enter your API in config.js
+const API_KEY = "ENTER YOUR API";
+Change git remote url to avoid accidental pushes to base project
+git remote set-url origin github_username/repo_name
+git remote -v # confirm the changes
+(back to top)
 
-Scan the QR code with the **Expo Go** app (SDK 54 build) on your phone.
-Camera access requires a physical device or a simulator with camera
-support — it will not work in the web preview. Please allow Expo Go to access your camera
+Usage
+Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
 
-## 3. Project structure
+(back to top)
 
-```
-App.jsx                    -- auth listener: shows LoginScreen or CameraScreen
-src/lib/supabase.js         -- Supabase client (put your keys here)
-src/screens/LoginScreen.jsx  -- Snapchat-styled auth screen
-src/screens/CameraScreen.jsx -- full-screen camera + capture/preview
-```
+License
+Distributed under the project_license. See LICENSE.txt for more information.
