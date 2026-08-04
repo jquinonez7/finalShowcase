@@ -35,7 +35,7 @@ export default function DiaryHub({ visible, close, journalToggle}) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
   const navigation = useNavigation();
-  const navigation = useNavigation();
+
   useEffect(() => {
     const fetchUser = async () => {
       const { data, error } = await supabase.auth.getUser();
