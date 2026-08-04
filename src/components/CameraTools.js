@@ -30,8 +30,6 @@ export default function CameraTools({ torchOn, onFlip, onToggleTorch }) {
 }
 
 const styles = StyleSheet.create({
-    // absolute so it sits at a fixed height instead of being spaced by the
-    // parent's space-between layout
     column: {
         position: "absolute",
         right: 12,
