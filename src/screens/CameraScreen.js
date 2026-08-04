@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,8 +9,7 @@ import {
 } from "react-native";
 
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useNavigation } from "@react-navigation/native";
-
+import { useNavigation, useRoute } from "@react-navigation/native";
 import ToggleMode from "../components/ToggleMode";
 import BitmojiButton from "../components/bitmojiButton";
 import CameraTools from "../components/CameraTools";
@@ -37,6 +36,21 @@ export default function CameraScreen() {
   const isRecordingRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const longPressFiredRef = useRef(false);
+
+  //gives you the current route object, which holds params
+  const route = useRoute();
+
+  // the hub's plus button asks for journal mode when it navigates here
+  useEffect(() => {
+    //checks whether anyone actually sent the param.
+    if (route.params?.journalMode !== undefined) {
+      //sets to params if exists
+      setJournalMode(route.params.journalMode);
+      // clear it so opening the camera tab normally later doesnt reuse it
+      navigation.setParams({ journalMode: undefined });
+    }
+    //only reruns when that value chang
+  }, [route.params?.journalMode]);
 
   if (!permission) {
     // still checking, stay black 
@@ -192,7 +206,7 @@ export default function CameraScreen() {
           buttons inside tappable */}
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.topBar}>
-          <BitmojiButton
+          <BitmojiButton onPress={() => navigation.navigate("Profile")}
           />
         </View>
 

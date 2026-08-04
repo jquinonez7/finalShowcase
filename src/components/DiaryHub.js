@@ -15,8 +15,10 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 const { width } = Dimensions.get("window");
 //Supabase stuff
-import { useState, useEffect, useMemo} from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../utils/hooks/supabase";
+//for the navigate to camera button
+import { useNavigation } from "@react-navigation/native";
 const STORAGE_BUCKET = "diary-media";
 const DIARY_FOLDER = "diary-entries";
 
@@ -26,51 +28,51 @@ const GAP = 3;
 const COLUMNS = 3;
 const ITEM_SIZE = (width - GAP * (COLUMNS - 1)) / COLUMNS;
 
-export default function DiaryHub({ visible, close }) {
+export default function DiaryHub({ visible, close, journalToggle }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
-
+  const navigation = useNavigation();
   useEffect(() => {
-        const fetchUser = async () => {
-            const { data, error } = await supabase.auth.getUser();
-            if (error) {
-                console.error("Error fetching current user:", error);
-                return;
-            }
-            setCurrentUserId(data?.user?.id ?? null);
-        };
-        
-        fetchUser();
-    }, []);
-    useEffect(() => {
-  if (currentUserId) {
-    fetchUserEntries();
-  }
-}, [currentUserId]);
-
-    const fetchUserEntries = async () => {
-        const { data, error } = await supabase
-            .from("diary_entries")
-            .select("*")
-            .eq("user_id", currentUserId)
-
-        if (error) {
-            console.error("Error fetching User Entry details:", error);
-            return;
-        }
-
-        if (data) {
-            setUserEntries(data);
-        }
+    const fetchUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        console.error("Error fetching current user:", error);
+        return;
+      }
+      setCurrentUserId(data?.user?.id ?? null);
     };
-    const SortUserEntries = useMemo(
-        () =>
-            userEntries
-                .filter((item) => item.privacy_status === "private")
-                .slice()
-                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
-        [userEntries]
-    );
+
+    fetchUser();
+  }, []);
+  useEffect(() => {
+    if (currentUserId) {
+      fetchUserEntries();
+    }
+  }, [currentUserId]);
+
+  const fetchUserEntries = async () => {
+    const { data, error } = await supabase
+      .from("diary_entries")
+      .select("*")
+      .eq("user_id", currentUserId)
+
+    if (error) {
+      console.error("Error fetching User Entry details:", error);
+      return;
+    }
+
+    if (data) {
+      setUserEntries(data);
+    }
+  };
+  const SortUserEntries = useMemo(
+    () =>
+      userEntries
+        .filter((item) => item.privacy_status === "private")
+        .slice()
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+    [userEntries]
+  );
 
   return (
     <Modal
@@ -85,7 +87,7 @@ export default function DiaryHub({ visible, close }) {
 
         {/* --- Top Header with Background Asset --- */}
         <ImageBackground
-          // 💡 Replace uri with require('../../assets/your-header-bg.png') for local images
+          // :bulb: Replace uri with require('../../assets/your-header-bg.png') for local images
           source={require("../../assets/profile-hub/hub-bitmoji.png")}
           style={styles.topHeader}
           resizeMode="cover"
@@ -162,8 +164,13 @@ export default function DiaryHub({ visible, close }) {
               styles.translucentPlusButton,
               { transform: [{ scale: pressed ? 0.92 : 1 }] },
             ]}
-            onPress={() => console.log("move to camera")}
-            
+            onPress={() => {
+              close();
+              navigation.navigate("UserTab", {
+                screen: "Camera",
+                params: { journalMode: true },
+              });
+            }}
           >
             <Ionicons name="add" size={48} color="#fff" />
           </Pressable>
@@ -174,7 +181,7 @@ export default function DiaryHub({ visible, close }) {
 }
 
 const styles = StyleSheet.create({
-  
+
   container: {
     flex: 1,
     backgroundColor: "#FFFC00", // Fallback color
