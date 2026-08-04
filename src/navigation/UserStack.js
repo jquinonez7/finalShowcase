@@ -13,6 +13,7 @@ import MemoryScreen from "../screens/MemoryScreen";
 import PreviewScreen from "../screens/PreviewScreen";
 import EventScreen from "../screens/EventScreen"; //New component by Sona and Christian
 import SendToScreen from "../screens/SendToScreen";
+
 const Stack = createStackNavigator();
 
 export default function App() {

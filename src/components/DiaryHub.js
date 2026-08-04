@@ -17,6 +17,11 @@ const { width } = Dimensions.get("window");
 //Supabase stuff
 import { useState, useEffect, useMemo} from "react";
 import { supabase } from "../../utils/hooks/supabase";
+//for the navigate to camera button
+import { useNavigation } from "@react-navigation/native";
+//for the video preview
+import { useVideoPlayer, VideoView } from "expo-video";
+//**** 
 const STORAGE_BUCKET = "diary-media";
 const DIARY_FOLDER = "diary-entries";
 
@@ -26,10 +31,10 @@ const GAP = 3;
 const COLUMNS = 3;
 const ITEM_SIZE = (width - GAP * (COLUMNS - 1)) / COLUMNS;
 
-export default function DiaryHub({ visible, close }) {
+export default function DiaryHub({ visible, close, journalToggle}) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
-
+  const navigation = useNavigation();
   useEffect(() => {
         const fetchUser = async () => {
             const { data, error } = await supabase.auth.getUser();
@@ -71,7 +76,15 @@ export default function DiaryHub({ visible, close }) {
                 .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
         [userEntries]
     );
-
+    
+    // const miniPreview = useVideoPlayer(video.media_url, (miniPreview) => {
+    //         miniPreview.loop = true;
+    //     });
+    
+    // useEffect(() => {
+    //          if (videoUri && miniPreview) miniPreview.play();
+    //      }, [videoUri, miniPreview]);
+    
   return (
     <Modal
       animationType="slide"
@@ -162,7 +175,10 @@ export default function DiaryHub({ visible, close }) {
               styles.translucentPlusButton,
               { transform: [{ scale: pressed ? 0.92 : 1 }] },
             ]}
-            onPress={() => console.log("move to camera")}
+            onPress={() => {
+              close();
+              navigation.navigate("UserTab", { screen: "Camera"});
+            }}
             
           >
             <Ionicons name="add" size={48} color="#fff" />
