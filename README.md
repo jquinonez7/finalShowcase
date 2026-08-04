@@ -1,45 +1,49 @@
-# Snap Clone — Starter Project
+# About The Project
 
-A minimal Snapchat-look-alike starter fullstack mobile dev.
-It ships with exactly two things working end-to-end:
+Our project aims to raise awareness about mental health issues and foster meaningful social connections directly within Snapchat. Built as a integrated mental health hub, this feature helps Snapchatters stay connected with their support network while providing interactive tools for personal reflection and emotional processing.
 
-1. A Snapchat-styled **login/sign-up screen** (Supabase Auth, email + password)
-2. A **full-screen camera** that opens right after login (Expo Camera —
-   capture photo, flip camera, toggle flash, preview + retake)
+## Key Features
 
-Everything else — Stories, chat, friends, disappearing snaps, sending a
-snap to someone — is left as an exercise. There's a `TODO (students)` comment
-in `src/screens/CameraScreen.tsx` and `src/lib/supabase.ts` marking the two
-places you'll extend first.
+* **Proactive Friend Check-Ins**
+  * Automatically sends gentle reminders to reach out if you haven't interacted with someone on your Snapchat best friends list in the past 48 hours.
+  * Helps maintain consistent, supportive relationships without the mental burden of keeping track of when you last talked.
 
-## Tech stack
+* **Interactive Video Diaries**
+  * Capture video reflections using Snapchat's camera interface.
+  * Flexible post-recording actions to suit your current emotional state:
+    * **"Let Go"** — Instantly delete the video entry as a symbolic release of negative emotions.
+    * **"Ask for Advice"** — Share the Snap directly with a trusted friend for advice and support.
+    * **"Save to Diary"** — Store the video tagged by mood (e.g., *Grateful*, *Hopeful*, *Resilient*) to revisit later as a source of personal encouragement and motivation.
 
-- Expo **SDK 54** (pinned — required for this to work in current Expo Go)
-- React Native 0.81 / React 19
-- Written in Javascript but is scaffolded to be refactor in TypeScript
-- Supabase (`@supabase/supabase-js`) for auth + database
-- `expo-camera` for the camera
-- `@react-navigation/native` + `native-stack` are pre-installed (not wired up
-  yet) — you'll want these once you add more screens (chat, stories, profile)
 
-## 1. Set up Supabase
+Built With React
 
-1. Create a free project at https://supabase.com
-2. In your project, go to **Settings → API** and copy the **Project URL**
+## Getting Started
+Here are a few simple steps to get our project running on your computer.
+### Prerequisites
+1. Fork & Clone
+ * Fork the above repository, then clone the copy to your computer.
+```bash
+git clone https://github.com/jackiepantoja78/sea-academy-catalog.git
+```
+
+2. Set Up Supabase
+ * Create a free project at https://supabase.com
+ * In your project, go to **Settings → API** and copy the **Project URL**
    and the **anon/public key**
-3. Create an `.env.local` on the root. Paste in the following keys with YOUR values.
+ * Create an `.env.local` on the root. Paste in the following keys with YOUR values.
 
 ```js
 const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
 const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
 ```
 
-4. In Supabase, go to **Authentication → Providers** and make sure
-   **Email** is `not` enabled. Under **Authentication →
+ * In Supabase, go to **Authentication →
    Settings** you may want to turn **off** "Confirm email" so users can
    sign up and log straight in without checking an inbox.
 
-## 2. Install & run
+### Install & Run
+1. Run these commands to launch app
 
 ```bash
 npm install
@@ -50,11 +54,10 @@ Scan the QR code with the **Expo Go** app (SDK 54 build) on your phone.
 Camera access requires a physical device or a simulator with camera
 support — it will not work in the web preview. Please allow Expo Go to access your camera
 
-## 3. Project structure
+## Usage
+Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
 
-```
-App.jsx                    -- auth listener: shows LoginScreen or CameraScreen
-src/lib/supabase.js         -- Supabase client (put your keys here)
-src/screens/LoginScreen.jsx  -- Snapchat-styled auth screen
-src/screens/CameraScreen.jsx -- full-screen camera + capture/preview
-```
+(back to top)
+
+License
+Distributed under the project_license. See LICENSE.txt for more information.
