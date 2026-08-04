@@ -13,6 +13,7 @@ import MemoryScreen from "../screens/MemoryScreen";
 import PreviewScreen from "../screens/PreviewScreen";
 import EventScreen from "../screens/EventScreen"; //New component by Sona and Christian
 import SendToScreen from "../screens/SendToScreen";
+import CameraScreen from "../screens/CameraScreen";
 const Stack = createStackNavigator();
 
 export default function App() {
@@ -23,7 +24,12 @@ export default function App() {
         <Stack.Screen
           name="Profile"
           component={ProfileScreen}
-          options={{ headerShown: true }}
+          options={{ headerShown: false }}
+        />
+         <Stack.Screen
+          name="Camera"
+          component={CameraScreen}
+          options={{ headerShown: false }}
         />
         <Stack.Screen 
         name="SendTo" 
