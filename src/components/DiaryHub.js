@@ -15,7 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 const { width } = Dimensions.get("window");
 //Supabase stuff
-import { useState, useEffect, useMemo} from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "../../utils/hooks/supabase";
 //for the navigate to camera button
 import { useNavigation } from "@react-navigation/native";
@@ -35,34 +35,35 @@ export default function DiaryHub({ visible, close, journalToggle}) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
   const navigation = useNavigation();
+  const navigation = useNavigation();
   useEffect(() => {
-        const fetchUser = async () => {
-            const { data, error } = await supabase.auth.getUser();
-            if (error) {
-                console.error("Error fetching current user:", error);
-                return;
-            }
-            setCurrentUserId(data?.user?.id ?? null);
-        };
-        
-        fetchUser();
-    }, []);
-    useEffect(() => {
-  if (currentUserId) {
-    fetchUserEntries();
-  }
-}, [currentUserId]);
+    const fetchUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        console.error("Error fetching current user:", error);
+        return;
+      }
+      setCurrentUserId(data?.user?.id ?? null);
+    };
 
-    const fetchUserEntries = async () => {
-        const { data, error } = await supabase
-            .from("diary_entries")
-            .select("*")
-            .eq("user_id", currentUserId)
+    fetchUser();
+  }, []);
+  useEffect(() => {
+    if (currentUserId) {
+      fetchUserEntries();
+    }
+  }, [currentUserId]);
 
-        if (error) {
-            console.error("Error fetching User Entry details:", error);
-            return;
-        }
+  const fetchUserEntries = async () => {
+    const { data, error } = await supabase
+      .from("diary_entries")
+      .select("*")
+      .eq("user_id", currentUserId)
+
+    if (error) {
+      console.error("Error fetching User Entry details:", error);
+      return;
+    }
 
         if (data) {
             setUserEntries(data);
@@ -98,7 +99,7 @@ export default function DiaryHub({ visible, close, journalToggle}) {
 
         {/* --- Top Header with Background Asset --- */}
         <ImageBackground
-          // 💡 Replace uri with require('../../assets/your-header-bg.png') for local images
+          // :bulb: Replace uri with require('../../assets/your-header-bg.png') for local images
           source={require("../../assets/profile-hub/hub-bitmoji.png")}
           style={styles.topHeader}
           resizeMode="cover"
@@ -190,7 +191,7 @@ export default function DiaryHub({ visible, close, journalToggle}) {
 }
 
 const styles = StyleSheet.create({
-  
+
   container: {
     flex: 1,
     backgroundColor: "#FFFC00", // Fallback color
