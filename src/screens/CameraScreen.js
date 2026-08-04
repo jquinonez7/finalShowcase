@@ -1,250 +1,222 @@
+import React, { useRef, useState } from "react";
 import {
-  StyleSheet,
-  Text,
   View,
-  Image,
-  SafeAreaView,
+  Text,
   TouchableOpacity,
-  Modal,
   Pressable,
+  StyleSheet,
+  SafeAreaView,
 } from "react-native";
-import { useEffect, useRef, useState } from "react";
-import { CameraView, CameraType, useCameraPermissions } from "expo-camera";
-import * as MediaLibrary from "expo-media-library";
-import { shareAsync } from "expo-sharing";
-import * as ImagePicker from "expo-image-picker";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import CameraActions from "../components/CameraActions";
-import CameraOptions from "../components/CameraOptions";
-import PostcaptureOptions from "../components/PostcaptureActions";
-// Add supabase to store:
-import { supabase } from "../utils/hooks/supabase";
-import CameraGalleryMenu from "../components/CameraGalleryMenu";
 
-export default function CameraScreen({ navigation, focused }) {
-  const tabBarHeight = useBottomTabBarHeight();
-  const insets = useSafeAreaInsets();
-  const cameraRef = useRef(null);
-  const [facing, setFacing] = useState("back");
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { useNavigation } from "@react-navigation/native";
+
+import ToggleMode from "../components/ToggleMode";
+import BitmojiButton from "../components/bitmojiButton";
+import CameraTools from "../components/CameraTools";
+import CaptureButton from "../components/CaptureButton";
+
+const YELLOW = "#FFFC00";
+const PURPLE = "#B69CFF";
+
+// how close two taps have to be to count as a double tap
+const DOUBLE_TAP_DELAY_MS = 300;
+
+export default function CameraScreen() {
+  const navigation = useNavigation();
+  const [bitmojiUrl, setBitmojiUrl] = useState(null);
   const [permission, requestPermission] = useCameraPermissions();
-  const [hasMediaLibraryPermission, setHasMediaLibraryPermission] =
-    useState(null);
-  const [photo, setPhoto] = useState(null);
-  //const [image, setImage] = useState(null);
-  const [showGalleryMenu, setShowGalleryMenu] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      // Request media library permissions
-      const { status: mediaLibraryStatus } =
-        await MediaLibrary.requestPermissionsAsync();
-      setHasMediaLibraryPermission(mediaLibraryStatus === "granted");
-    })();
-  }, []);
+  const [facing, setFacing] = useState("back");
+  const [torchOn, setTorchOn] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [captureState, setCaptureState] = useState("idle");
+  const [journalMode, setJournalMode] = useState(false);
+  const accentColor = journalMode ? PURPLE : YELLOW;
+  const cameraRef = useRef(null);
+  const lastTapRef = useRef(0);
+  const isRecordingRef = useRef(false);
+  const stopRequestedRef = useRef(false);
+  const longPressFiredRef = useRef(false);
 
   if (!permission) {
-    // Camera permissions are still loading.
-    return <View />;
+    // still checking, stay black 
+    return <View style={styles.center} />;
   }
 
   if (!permission.granted) {
-    // Camera permissions are not granted yet.
     return (
-      <View style={styles.container}>
-        <Text style={styles.message}>
-          We need your permission to show the camera.
+      <View style={styles.center}>
+        <Text style={styles.permissionText}>
+          Snap needs camera access to take Snaps.
         </Text>
-        <TouchableOpacity onPress={requestPermission} style={styles.button}>
-          <Text style={styles.text}>Grant Permission</Text>
+
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={requestPermission}
+        >
+          <Text style={styles.permissionButtonText}>Enable Camera</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  function flipCamera() {
+  const toggleCamera = () => {
     setFacing((current) => (current === "back" ? "front" : "back"));
-  }
+  };
 
-  function galleryMenu() {
-    // console.log("HELLO, is the gallery menu being shown?\n", !showGalleryMenu)
-    // return <CameraGalleryMenu />
-    setShowGalleryMenu(!showGalleryMenu);
-  }
-  async function checkGallery() {
-    const permissionResult =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      alert("Permission to access camera roll is required!");
+  // flips the camera only if two taps land close enough together
+  const handleDoubleTap = () => {
+    const now = Date.now();
+
+    if (now - lastTapRef.current < DOUBLE_TAP_DELAY_MS) {
+      toggleCamera();
+      // reset so a third tap starts a new pair
+      lastTapRef.current = 0;
       return;
     }
-    const pickerResult = await ImagePicker.launchImageLibraryAsync();
-    // console.log(pickerResult);
-    console.log(pickerResult);
-    setShowGalleryMenu(false); //By Ryan
-    console.log(pickerResult.assets[0].uri);
-    if (!pickerResult.canceled) {
-      //setImage(pickerResult.uri);
-      setPhoto(pickerResult.assets[0]); //By Ryan
-    }
-  }
 
-  async function takePhoto() {
-    if (cameraRef.current) {
-      const options = { quality: 1, base64: true, exif: false };
-      const newPhoto = await cameraRef.current.takePictureAsync(options);
-      setPhoto(newPhoto);
-      // This part is to insert URI to "gallery" table
-      console.log(" Before Insert to table!");
-      const { error } = await supabase
-        .from("gallery")
-        .insert({ photo: newPhoto.uri });
-      console.log("After Insert to table!");
-      if (error) {
-        console.error("Error inserting photo:", error.message);
-      }
-      // This part is to store images in a folder bucket named "pictureStorage"
-      //uploadImage(newPhoto.uri);
-    }
-  }
+    lastTapRef.current = now;
+  };
 
-  // async function uploadImage (photoUri) {
-  //   // console.log("1")
-  //   const response = await fetch(photoUri);
-
-  //   const blob = await response.blob();
-
-  //   const arrayBuffer = await new Response(blob).arrayBuffer();
-  //   // console.log("2")
-  //   const fileName = `public/${Date.now()}.jpg`;
-  //   const { error1} = await supabase
-  //     .storage
-  //     .from('pictureStorage')
-  //     .upload(fileName, arrayBuffer, { contentType: 'image/jpeg', upsert: false });
-  //   // console.log("3")
-  //   if (error1) {
-  //     console.error('Error uploading image:', error1.message);
-  //   } else {
-  //     console.log('Image successfully uploaded:', data);
-  //   }
-
-  // }
-
-  function savePhoto() {
-    MediaLibrary.saveToLibraryAsync(photo.uri).then(() => {
-      setPhoto(null);
+  // preview is on the outer stack, so pushing it hides the tab bar
+  const openPreview = (params) => {
+    navigation.navigate("Preview", {
+      ...params,
+      // mirror pic
+      mirrored: facing === "front",
+      journalMode,
     });
-  }
+  };
 
-  if (photo) {
-    const sharePic = () => {
-      shareAsync(photo.uri).then(() => {
-        setPhoto(null);
-      });
-    };
+  // quick tap of the capture button
+  const takePicture = async () => {
+    if (!cameraRef.current || !isCameraReady) {
+      // no camera on web or the simulator, go to the preview empty so
+      // the screen can still be worked on. remove before shipping
+      openPreview({});
+      return;
+    }
 
-    return (
-      <View
-        style={[
-          styles.container,
-          {
-            marginBottom: tabBarHeight,
-            paddingTop: insets.top,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
-        <Image
-          style={facing === "front" ? styles.frontPreview : styles.preview}
-          //source={{ uri: "data:image/jpg;base64," + photo.base64 }}
-          // We don't need that base64 thing, just uri is good
-          source={{ uri: photo.uri }}
-        />
-        {hasMediaLibraryPermission && (
-          <PostcaptureOptions
-            deletePhoto={() => setPhoto(null)}
-            savePhoto={savePhoto}
-          />
-        )}
-      </View>
-    );
-  }
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
+      if (photo?.uri) openPreview({ photoUri: photo.uri });
+    } catch (error) {
+      console.log("[camera] failed to take picture:", error);
+      openPreview({});
+    }
+  };
 
-  if (showGalleryMenu) {
-    return (
-      <View
-        style={[
-          styles.container,
-          {
-            marginBottom: tabBarHeight,
-            paddingTop: insets.top,
-            paddingBottom: insets.bottom,
-          },
-        ]}
-      >
-        <CameraView style={styles.camera} facing={facing} ref={cameraRef} />
-        <CameraOptions flipCamera={flipCamera} />
-        <CameraActions
-          galleryMenu={galleryMenu}
-          checkGallery={checkGallery}
-          takePhoto={takePhoto}
-        />
-        <Modal
-          animationType="slide"
-          transparent={true}
-          visible={showGalleryMenu}
-          onRequestClose={() => {
-            Alert.alert("Modal has been closed.");
-            setModalVisible(!modalVisible);
-          }}
-        >
-          <View style={styles.centeredView}>
-            <View style={styles.modalView}>
-              <Pressable
-                onPress={checkGallery}
-                style={({ pressed }) => [
-                  { backgroundColor: pressed ? "blue" : "transparent" },
-                  styles.buttonStyle,
-                ]}
-                // style={styles.buttonStyle}
-              >
-                <Text style={styles.buttonText}>Phone Gallery</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  navigation.navigate("MemoryScreen");
-                }}
-                style={styles.buttonStyle}
-              >
-                <Text style={styles.buttonText}>ChatSnap Memories</Text>
-              </Pressable>
-              <Pressable onPress={galleryMenu} style={styles.closeButtonStyle}>
-                <Text style={styles.buttonText}>Close</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
-      </View>
-    );
-  }
+  // hold past the threshold on the capture button
+  const startRecording = async () => {
+    if (!cameraRef.current || isRecordingRef.current) return;
+
+    longPressFiredRef.current = true;
+    stopRequestedRef.current = false;
+    setCaptureState("recording");
+
+    // the camera is sometimes not ready the instant the hold fires
+    const maxAttempts = 3;
+    const retryDelayMs = 100;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      // released while waiting, dont start a recording nobody is holding
+      if (stopRequestedRef.current) break;
+
+      try {
+        isRecordingRef.current = true;
+
+        // this waits here for the whole length of the video
+        const video = await cameraRef.current.recordAsync();
+        if (video?.uri) openPreview({ videoUri: video.uri });
+
+        break;
+      } catch (error) {
+        isRecordingRef.current = false;
+        console.log(`[camera] record attempt ${attempt} failed:`, error);
+
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        }
+      }
+    }
+
+    // reached whether it recorded or every attempt failed
+    isRecordingRef.current = false;
+    stopRequestedRef.current = false;
+    setCaptureState("idle");
+  };
+
+  // every release of the capture button, tap or hold
+  const stopRecording = () => {
+    if (isRecordingRef.current) {
+      // normal case, ends the recordAsync above
+      try {
+        cameraRef.current?.stopRecording();
+      } catch (error) {
+        console.log("[camera] stopRecording threw:", error);
+      }
+    } else if (longPressFiredRef.current) {
+      // the hold fired but recording hadnt opened yet, so flag it
+      stopRequestedRef.current = true;
+    }
+
+    longPressFiredRef.current = false;
+    setCaptureState("idle");
+  };
+
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          marginBottom: tabBarHeight,
-          paddingTop: insets.top,
-          paddingBottom: insets.bottom,
-        },
-      ]}
-    >
-      <CameraView style={styles.camera} facing={facing} ref={cameraRef} />
-      <CameraOptions flipCamera={flipCamera} />
-      <CameraActions
-        galleryMenu={galleryMenu}
-        checkGallery={checkGallery}
-        takePhoto={takePhoto}
+    <View style={styles.container}>
+      {/* the camera has no press handler, so a Pressable wraps it */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={handleDoubleTap}>
+        <CameraView
+          ref={cameraRef}
+          style={StyleSheet.absoluteFill}
+          facing={facing}
+          enableTorch={torchOn}
+          // locked to video so recording works without reinitializing
+          mode="video"
+          onCameraReady={() => setIsCameraReady(true)}
+        />
+      </Pressable>
+
+      {/* purple wash so journal mode is obvious at a glance */}
+      {journalMode && (
+        <View
+          style={[StyleSheet.absoluteFill, styles.modeTint]}
+          pointerEvents="none"
+        />
+      )}
+
+      {/* box-none lets taps through to the camera but keeps the
+          buttons inside tappable */}
+      <SafeAreaView style={styles.overlay} pointerEvents="box-none">
+        <View style={styles.topBar}>
+          <BitmojiButton
+          />
+        </View>
+
+        <CameraTools
+          torchOn={torchOn}
+          onFlip={toggleCamera}
+          onToggleTorch={() => setTorchOn((t) => !t)}
+        />
+
+        <CaptureButton
+          state={captureState}
+          accentColor={accentColor}
+          onPressIn={() => setCaptureState("pressed")}
+          onPress={takePicture}
+          onLongPress={startRecording}
+          onPressOut={stopRecording}
+        />
+      </SafeAreaView>
+
+      <ToggleMode
+        top={70}
+        accentColor={accentColor}
+        activeSwitch={journalMode ? 2 : 1}
+        onChange={(val) => setJournalMode(val === 2)}
       />
     </View>
   );
@@ -253,64 +225,47 @@ export default function CameraScreen({ navigation, focused }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "black",
+    backgroundColor: "#000",
   },
-  camera: {
-    overflow: "hidden",
+
+  modeTint: {
+    backgroundColor: "rgba(120,80,220,0.18)",
+  },
+  center: {
     flex: 1,
+    backgroundColor: "#000",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 16,
-  },
-  preview: {
-    flex: 1,
-    borderRadius: 16,
-  },
-  frontPreview: {
-    flex: 1,
-    borderRadius: 16,
-    transform: [{ scaleX: -1 }],
-  },
-  modalView: {
-    margin: 20,
-    marginTop: 400,
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 15,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  buttonStyle: {
-    alignItems: "center",
-    justifyContent: "center",
-    margin: 5,
-    paddingVertical: 20,
     paddingHorizontal: 32,
-    borderRadius: 20,
-    elevation: 3,
-    backgroundColor: "#2196F3",
   },
-  closeButtonStyle: {
-    alignItems: "center",
-    justifyContent: "center",
-    margin: 5,
-    paddingVertical: 20,
-    paddingHorizontal: 32,
-    borderRadius: 20,
-    elevation: 3,
-    backgroundColor: "red",
+
+  permissionText: {
+    color: "#fff",
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 20,
   },
-  buttonText: {
-    fontSize: 20,
-    lineHeight: 21,
-    letterSpacing: 0.5,
-    color: "white",
+
+  permissionButton: {
+    backgroundColor: YELLOW,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 24,
+  },
+
+  permissionButtonText: {
+    fontWeight: "800",
+    color: "#111",
+  },
+
+  overlay: {
+    flex: 1,
+    justifyContent: "space-between",
+  },
+
+  topBar: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    paddingTop: 8,
   },
 });

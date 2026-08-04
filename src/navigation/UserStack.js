@@ -10,8 +10,9 @@ import SettingsScreen from "../screens/SettingsScreen";
 import FriendStory from "../screens/FriendStory";
 import AstrologyScreen from "../screens/AstrologyScreen";
 import MemoryScreen from "../screens/MemoryScreen";
+import PreviewScreen from "../screens/PreviewScreen";
 import EventScreen from "../screens/EventScreen"; //New component by Sona and Christian
-
+import SendToScreen from "../screens/SendToScreen";
 const Stack = createStackNavigator();
 
 export default function App() {
@@ -24,6 +25,10 @@ export default function App() {
           component={ProfileScreen}
           options={{ headerShown: true }}
         />
+        <Stack.Screen 
+        name="SendTo" 
+        component={SendToScreen} 
+        />
         <Stack.Screen
           name="FriendStory"
           component={FriendStory}
@@ -33,6 +38,11 @@ export default function App() {
           name="AddFriend"
           component={AddFriendScreen}
           options={{ headerShown: true }}
+        />
+        <Stack.Screen
+          name="Preview"
+          component={PreviewScreen}
+          options={{ animation: "none" }}
         />
         <Stack.Screen
           name="Conversation"
