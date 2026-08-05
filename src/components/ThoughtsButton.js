@@ -9,11 +9,11 @@ import { useNavigation } from "@react-navigation/native";
  * No saving happens here, SendToScreen owns that once a destination
  * has been chosen.
  */
-export default function ThoughtsButton({ photoUri, videoUri }) {
+export default function ThoughtsButton({ photoUri, videoUri, promptText, mood }) {
   const navigation = useNavigation();
 
   const handlePress = () => {
-    navigation.navigate("SendTo", { photoUri, videoUri });
+    navigation.navigate("SendTo", { photoUri, videoUri, promptText, mood });
   };
 
   return (

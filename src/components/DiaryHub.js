@@ -75,12 +75,12 @@ export default function DiaryHub({ visible, close, journalToggle }) {
   );
 
   return (
+    //changed so allows to slide out of modal
     <Modal
       animationType="slide"
-      transparent={false}
+      presentationStyle="pageSheet"
       visible={visible}
       onRequestClose={close}
-      statusBarTranslucent={true}
     >
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" />
