@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal,
   StyleSheet,
@@ -11,162 +11,67 @@ import {
   Dimensions,
   StatusBar,
   ImageBackground,
-  ActivityIndicator, // 👈 Added ActivityIndicator
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import { useVideoPlayer, VideoView } from "expo-video";
 import * as VideoThumbnails from "expo-video-thumbnails";
+
 import { supabase } from "../../utils/hooks/supabase";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
+// 3 columns with a clean 3px gap
 const GAP = 3;
 const COLUMNS = 3;
 const ITEM_SIZE = (width - GAP * (COLUMNS - 1)) / COLUMNS;
 
-// ⚡ In-memory cache to store generated thumbnails so they only render ONCE per session
-const thumbnailCache = {};
+// a second in, since the very first frame is often black
+const THUMBNAIL_TIME_MS = 1000;
 
-// --- Full-Screen Snapchat-Style Video Modal ---
-function VideoPreviewOverlay({ videoUrl, visible, onClose }) {
-  const player = useVideoPlayer(videoUrl, (p) => {
-    p.loop = true;
-    p.play();
-  });
+// emoji per mood key, matching the ones in MoodShutter
+const MOOD_EMOJI = {
+  low: "😞",
+  sad: "🙁",
+  happy: "🙂",
+  great: "😄",
+  meh: "😐",
+};
 
-  if (!visible || !videoUrl) return null;
-
-  return (
-    <Modal
-      animationType="fade"
-      transparent={true}
-      visible={visible}
-      onRequestClose={onClose}
-      statusBarTranslucent={true}
-    >
-      <View style={styles.fullScreenContainer}>
-        <StatusBar barStyle="light-content" />
-
-        <VideoView
-          player={player}
-          style={styles.fullScreenVideo}
-          contentFit="cover"
-          nativeControls={false}
-        />
-
-        <Pressable
-          style={({ pressed }) => [
-            styles.closeButton,
-            { opacity: pressed ? 0.6 : 1 },
-          ]}
-          onPress={onClose}
-        >
-          <Ionicons name="close" size={28} color="#fff" />
-        </Pressable>
-      </View>
-    </Modal>
-  );
+// an Image cant render an mp4, so the two need telling apart
+function isVideo(url = "") {
+  return url.endsWith(".mp4") || url.endsWith(".mov");
 }
 
-// --- Grid Item Component Handling Fast Video Thumbnails with Loading Buffer ---
-function GridTile({ item, isVid, onLongPress }) {
-  const cachedUri = thumbnailCache[item?.media_url] || null;
-  const [thumbnailUri, setThumbnailUri] = useState(cachedUri);
-  
-  // ⚡ Track loading state: Start true if it's a video and not cached yet
-  const [isLoading, setIsLoading] = useState(isVid && !cachedUri);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const generateThumbnail = async () => {
-      // If it's not a video or already cached, skip thumbnail generation
-      if (!isVid || !item?.media_url || thumbnailCache[item.media_url]) {
-        if (isMounted) setIsLoading(false);
-        return;
-      }
-
-      try {
-        if (isMounted) setIsLoading(true);
-
-        const { uri } = await VideoThumbnails.getThumbnailAsync(
-          item.media_url,
-          {
-            time: 100,
-            quality: 0.3,
-          }
-        );
-
-        thumbnailCache[item.media_url] = uri;
-
-        if (isMounted) {
-          setThumbnailUri(uri);
-        }
-      } catch (e) {
-        console.warn("Could not generate video thumbnail:", e);
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    generateThumbnail();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [item?.media_url, isVid]);
-
-  const displayUri = isVid ? thumbnailUri : item?.media_url;
-
-  return (
-    <Pressable
-      style={styles.photoWrapper}
-      delayLongPress={200}
-      onLongPress={onLongPress}
-    >
-      {/* ⚡ Render spinner placeholder while loading */}
-      {isLoading ? (
-        <View style={styles.placeholder}>
-          <ActivityIndicator size="small" color="#8E8E93" />
-        </View>
-      ) : displayUri ? (
-        <Image
-          source={{ uri: displayUri }}
-          style={styles.photo}
-          onLoadStart={() => {
-            // Optional: Buffer standard images during download
-            if (!isVid) setIsLoading(true);
-          }}
-          onLoadEnd={() => setIsLoading(false)}
-        />
-      ) : (
-        <View style={styles.placeholder} />
-      )}
-
-      {/* Play badge indicator on video items (only show when loading completes) */}
-      {isVid && !isLoading && (
-        <View style={styles.videoBadge}>
-          <Ionicons name="play" size={12} color="#fff" />
-        </View>
-      )}
-    </Pressable>
-  );
-}
-
-export default function DiaryHub({ visible, close, journalToggle }) {
+export default function DiaryHub({ visible, close }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
-  const [activeVideoUrl, setActiveVideoUrl] = useState(null);
+  // generated video stills, keyed by entry id
+  const [thumbnails, setThumbnails] = useState({});
+  // the entry open full screen, null when none is
+  const [viewing, setViewing] = useState(null);
+
   const navigation = useNavigation();
+
+  // only gets a source when a video is open, so photos cost nothing
+  const player = useVideoPlayer(
+    viewing && isVideo(viewing.media_url) ? viewing.media_url : null,
+    (p) => {
+      p.loop = true;
+    },
+  );
+
+  useEffect(() => {
+    if (viewing && isVideo(viewing.media_url) && player) {
+      player.play();
+    }
+  }, [viewing, player]);
 
   useEffect(() => {
     const fetchUser = async () => {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
-        console.error("Error fetching current user:", error);
+        console.log("[hub] user fetch failed:", error.message);
         return;
       }
       setCurrentUserId(data?.user?.id ?? null);
@@ -175,12 +80,6 @@ export default function DiaryHub({ visible, close, journalToggle }) {
     fetchUser();
   }, []);
 
-  useEffect(() => {
-    if (currentUserId) {
-      fetchUserEntries();
-    }
-  }, [currentUserId]);
-
   const fetchUserEntries = async () => {
     const { data, error } = await supabase
       .from("diary_entries")
@@ -188,36 +87,80 @@ export default function DiaryHub({ visible, close, journalToggle }) {
       .eq("user_id", currentUserId);
 
     if (error) {
-      console.error("Error fetching User Entry details:", error);
+      console.log("[hub] entries query failed:", error.message);
       return;
     }
 
-    if (data) {
-      setUserEntries(data);
-    }
+    setUserEntries(data ?? []);
   };
 
-  const isVideoItem = (item) => {
-    if (!item?.media_url) return false;
-    return (
-      item.media_type === "video" ||
-      item.media_url.endsWith(".mp4") ||
-      item.media_url.endsWith(".mov")
-    );
+  // refetches every time the hub opens, so a snap saved a minute ago
+  // is already there
+  useEffect(() => {
+    if (currentUserId && visible) {
+      fetchUserEntries();
+    }
+  }, [currentUserId, visible]);
+
+  // only the private ones belong here, newest first
+  const entries = useMemo(
+    () =>
+      userEntries
+        .filter((item) => item.privacy_status === "private")
+        .slice()
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+    [userEntries],
+  );
+
+  // pulls a still out of each video so the grid isnt a wall of play
+  // badges. one at a time rather than all at once, since each one has
+  // to download the video to read a frame
+  useEffect(() => {
+    let cancelled = false;
+
+    const generate = async () => {
+      for (const entry of entries) {
+        if (cancelled) return;
+        if (!isVideo(entry.media_url) || thumbnails[entry.id]) continue;
+
+        try {
+          const { uri } = await VideoThumbnails.getThumbnailAsync(
+            entry.media_url,
+            { time: THUMBNAIL_TIME_MS },
+          );
+
+          if (cancelled) return;
+          // set as each one lands, so tiles fill in progressively
+          setThumbnails((current) => ({ ...current, [entry.id]: uri }));
+        } catch (error) {
+          console.log("[hub] thumbnail failed:", error.message);
+        }
+      }
+    };
+
+    generate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entries]);
+
+  const closeViewer = () => {
+    player?.pause();
+    setViewing(null);
   };
 
   return (
-    //changed so allows to slide out of modal
     <Modal
       animationType="slide"
-      presentationStyle="pageSheet"
+      transparent={false}
       visible={visible}
       onRequestClose={close}
+      statusBarTranslucent={true}
     >
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" />
 
-        {/* --- Top Header with Background Asset --- */}
         <ImageBackground
           source={require("../../assets/profile-hub/hub-bitmoji.png")}
           style={styles.topHeader}
@@ -243,11 +186,15 @@ export default function DiaryHub({ visible, close, journalToggle }) {
           </View>
         </ImageBackground>
 
-        {/* --- White Bottom Sheet --- */}
         <View style={styles.sheetContainer}>
           <View style={styles.searchSection}>
             <View style={styles.searchBar}>
-              <Ionicons name="search" size={20} color="#000" style={styles.searchIcon} />
+              <Ionicons
+                name="search"
+                size={20}
+                color="#000"
+                style={styles.searchIcon}
+              />
               <TextInput
                 placeholder="Search"
                 placeholderTextColor="#8E8E93"
@@ -262,7 +209,7 @@ export default function DiaryHub({ visible, close, journalToggle }) {
 
           <View style={styles.bubbleContainer}>
             <View style={styles.futureSelfBubble}>
-              <Text style={styles.futureSelfText}>Dear Future Self</Text>
+              <Text style={styles.futureSelfText}>Future Self</Text>
             </View>
           </View>
 
@@ -271,23 +218,59 @@ export default function DiaryHub({ visible, close, journalToggle }) {
             contentContainerStyle={styles.gridScrollContainer}
           >
             <View style={styles.grid}>
-              {userEntries.map((item) => {
-                const isVid = isVideoItem(item);
+              {entries.map((entry) => {
+                const video = isVideo(entry.media_url);
+                // the still if its ready, the video url if its a photo
+                const preview = video
+                  ? thumbnails[entry.id]
+                  : entry.media_url;
 
                 return (
-                  <GridTile
-                    key={item.id}
-                    item={item}
-                    isVid={isVid}
-                    onLongPress={() => {
-                      if (isVid) {
-                        setActiveVideoUrl(item.media_url);
-                      }
-                    }}
-                  />
+                  <Pressable
+                    key={entry.id}
+                    style={styles.photoWrapper}
+                    onPress={() => setViewing(entry)}
+                  >
+                    {preview ? (
+                      <Image source={{ uri: preview }} style={styles.photo} />
+                    ) : (
+                      // dark card until the thumbnail finishes
+                      <View style={styles.videoTile} />
+                    )}
+
+                    {/* play badge so a video tile is obvious even once
+                        its showing a still frame */}
+                    {video ? (
+                      <View style={styles.playBadge}>
+                        <Ionicons name="play" size={14} color="#fff" />
+                      </View>
+                    ) : null}
+
+                    {/* the prompt across the bottom, so you can see what
+                        each entry was answering without opening it */}
+                    {entry.prompt_text ? (
+                      <View style={styles.tilePrompt}>
+                        <Text style={styles.tilePromptText} numberOfLines={2}>
+                          {entry.prompt_text}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {entry.mood ? (
+                      <Text style={styles.tileMood}>
+                        {MOOD_EMOJI[entry.mood] ?? ""}
+                      </Text>
+                    ) : null}
+                  </Pressable>
                 );
               })}
             </View>
+
+            {entries.length === 0 ? (
+              <Text style={styles.empty}>
+                Nothing saved yet. Tap + to start.
+              </Text>
+            ) : null}
           </ScrollView>
 
           <Pressable
@@ -306,13 +289,54 @@ export default function DiaryHub({ visible, close, journalToggle }) {
             <Ionicons name="add" size={48} color="#fff" />
           </Pressable>
         </View>
-
-        <VideoPreviewOverlay
-          videoUrl={activeVideoUrl}
-          visible={!!activeVideoUrl}
-          onClose={() => setActiveVideoUrl(null)}
-        />
       </View>
+
+      {/* one entry full screen, tap anywhere to close */}
+      <Modal
+        visible={Boolean(viewing)}
+        animationType="fade"
+        onRequestClose={closeViewer}
+      >
+        <Pressable style={styles.viewer} onPress={closeViewer}>
+          {viewing && isVideo(viewing.media_url) ? (
+            <VideoView
+              player={player}
+              style={styles.viewerMedia}
+              contentFit="contain"
+              nativeControls={false}
+            />
+          ) : viewing?.media_url ? (
+            <Image
+              source={{ uri: viewing.media_url }}
+              style={styles.viewerMedia}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {viewing?.prompt_text ? (
+            <View style={styles.viewerPrompt}>
+              <Text style={styles.viewerPromptText}>{viewing.prompt_text}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.viewerFooter}>
+            {viewing?.mood ? (
+              <Text style={styles.viewerMood}>
+                {MOOD_EMOJI[viewing.mood] ?? ""}
+              </Text>
+            ) : null}
+
+            {viewing?.created_at ? (
+              <Text style={styles.viewerDate}>
+                {new Date(viewing.created_at).toLocaleDateString([], {
+                  month: "long",
+                  day: "numeric",
+                })}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
@@ -322,12 +346,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFFC00",
   },
+
   topHeader: {
     paddingTop: 50,
     paddingHorizontal: 16,
     height: 250,
     justifyContent: "space-between",
   },
+
   iconCircle: {
     width: 40,
     height: 40,
@@ -336,6 +362,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   topRightIcons: {
     position: "absolute",
     top: 50,
@@ -343,6 +370,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+
   sheetContainer: {
     flex: 1,
     backgroundColor: "#fff",
@@ -351,6 +379,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     overflow: "hidden",
   },
+
   searchSection: {
     flexDirection: "row",
     alignItems: "center",
@@ -358,6 +387,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 12,
   },
+
   searchBar: {
     flex: 1,
     flexDirection: "row",
@@ -367,26 +397,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 40,
   },
+
   searchIcon: {
     marginRight: 6,
   },
+
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: "#000",
   },
+
   cancelButton: {
     paddingVertical: 4,
   },
+
   cancelText: {
     fontSize: 16,
     fontWeight: "600",
     color: "#000",
   },
+
   bubbleContainer: {
     paddingHorizontal: 16,
     marginBottom: 12,
   },
+
   futureSelfBubble: {
     backgroundColor: "#0099FF",
     borderRadius: 20,
@@ -394,45 +430,87 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   futureSelfText: {
     color: "#fff",
     fontWeight: "700",
     fontSize: 15,
   },
+
   gridScrollContainer: {
     paddingBottom: 90,
   },
+
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: GAP,
   },
+
   photoWrapper: {
     width: ITEM_SIZE,
     height: ITEM_SIZE * 1.35,
     backgroundColor: "#E0E0E0",
-    position: "relative",
+    // keeps the prompt strip inside the tile
+    overflow: "hidden",
   },
+
   photo: {
     width: "100%",
     height: "100%",
     resizeMode: "cover",
   },
-  placeholder: {
+
+  // shown while the thumbnail is still generating
+  videoTile: {
     width: "100%",
     height: "100%",
-    backgroundColor: "#EFEFEF",
+    backgroundColor: "#2C2C2E",
+  },
+
+  playBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,0,0,0.5)",
     alignItems: "center",
     justifyContent: "center",
   },
-  videoBadge: {
+
+  // dark strip so the prompt stays readable over any photo
+  tilePrompt: {
     position: "absolute",
-    bottom: 6,
-    right: 6,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-    padding: 4,
-    borderRadius: 10,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 6,
+    paddingVertical: 5,
   },
+
+  tilePromptText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "600",
+    lineHeight: 13,
+  },
+
+  tileMood: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    fontSize: 18,
+  },
+
+  empty: {
+    textAlign: "center",
+    color: "#8E8E93",
+    marginTop: 40,
+  },
+
   translucentPlusButton: {
     position: "absolute",
     bottom: 24,
@@ -446,28 +524,52 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  fullScreenContainer: {
+
+  viewer: {
     flex: 1,
     backgroundColor: "#000",
-    width: width,
-    height: height,
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
   },
-  fullScreenVideo: {
+
+  viewerMedia: {
     width: "100%",
     height: "100%",
   },
-  closeButton: {
+
+  viewerPrompt: {
     position: "absolute",
-    top: 50,
+    top: 70,
     left: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    right: 20,
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+
+  viewerPromptText: {
+    color: "#111",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  viewerFooter: {
+    position: "absolute",
+    bottom: 50,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    zIndex: 9999,
+    gap: 10,
+  },
+
+  viewerMood: {
+    fontSize: 26,
+  },
+
+  viewerDate: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
