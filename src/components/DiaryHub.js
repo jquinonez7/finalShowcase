@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   Modal,
   StyleSheet,
@@ -11,29 +11,155 @@ import {
   Dimensions,
   StatusBar,
   ImageBackground,
+  ActivityIndicator, // 👈 Added ActivityIndicator
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-const { width } = Dimensions.get("window");
-//Supabase stuff
-import { useState, useEffect, useMemo } from "react";
-import { supabase } from "../../utils/hooks/supabase";
-//for the navigate to camera button
 import { useNavigation } from "@react-navigation/native";
-//for the video preview
 import { useVideoPlayer, VideoView } from "expo-video";
-//**** 
-const STORAGE_BUCKET = "diary-media";
-const DIARY_FOLDER = "diary-entries";
+import * as VideoThumbnails from "expo-video-thumbnails";
+import { supabase } from "../../utils/hooks/supabase";
 
+const { width, height } = Dimensions.get("window");
 
-// Grid Math: 3 columns with a clean 3px gap
 const GAP = 3;
 const COLUMNS = 3;
 const ITEM_SIZE = (width - GAP * (COLUMNS - 1)) / COLUMNS;
 
-export default function DiaryHub({ visible, close, journalToggle}) {
+// ⚡ In-memory cache to store generated thumbnails so they only render ONCE per session
+const thumbnailCache = {};
+
+// --- Full-Screen Snapchat-Style Video Modal ---
+function VideoPreviewOverlay({ videoUrl, visible, onClose }) {
+  const player = useVideoPlayer(videoUrl, (p) => {
+    p.loop = true;
+    p.play();
+  });
+
+  if (!visible || !videoUrl) return null;
+
+  return (
+    <Modal
+      animationType="fade"
+      transparent={true}
+      visible={visible}
+      onRequestClose={onClose}
+      statusBarTranslucent={true}
+    >
+      <View style={styles.fullScreenContainer}>
+        <StatusBar barStyle="light-content" />
+
+        <VideoView
+          player={player}
+          style={styles.fullScreenVideo}
+          contentFit="cover"
+          nativeControls={false}
+        />
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.closeButton,
+            { opacity: pressed ? 0.6 : 1 },
+          ]}
+          onPress={onClose}
+        >
+          <Ionicons name="close" size={28} color="#fff" />
+        </Pressable>
+      </View>
+    </Modal>
+  );
+}
+
+// --- Grid Item Component Handling Fast Video Thumbnails with Loading Buffer ---
+function GridTile({ item, isVid, onLongPress }) {
+  const cachedUri = thumbnailCache[item?.media_url] || null;
+  const [thumbnailUri, setThumbnailUri] = useState(cachedUri);
+  
+  // ⚡ Track loading state: Start true if it's a video and not cached yet
+  const [isLoading, setIsLoading] = useState(isVid && !cachedUri);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const generateThumbnail = async () => {
+      // If it's not a video or already cached, skip thumbnail generation
+      if (!isVid || !item?.media_url || thumbnailCache[item.media_url]) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
+
+      try {
+        if (isMounted) setIsLoading(true);
+
+        const { uri } = await VideoThumbnails.getThumbnailAsync(
+          item.media_url,
+          {
+            time: 100,
+            quality: 0.3,
+          }
+        );
+
+        thumbnailCache[item.media_url] = uri;
+
+        if (isMounted) {
+          setThumbnailUri(uri);
+        }
+      } catch (e) {
+        console.warn("Could not generate video thumbnail:", e);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    generateThumbnail();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [item?.media_url, isVid]);
+
+  const displayUri = isVid ? thumbnailUri : item?.media_url;
+
+  return (
+    <Pressable
+      style={styles.photoWrapper}
+      delayLongPress={200}
+      onLongPress={onLongPress}
+    >
+      {/* ⚡ Render spinner placeholder while loading */}
+      {isLoading ? (
+        <View style={styles.placeholder}>
+          <ActivityIndicator size="small" color="#8E8E93" />
+        </View>
+      ) : displayUri ? (
+        <Image
+          source={{ uri: displayUri }}
+          style={styles.photo}
+          onLoadStart={() => {
+            // Optional: Buffer standard images during download
+            if (!isVid) setIsLoading(true);
+          }}
+          onLoadEnd={() => setIsLoading(false)}
+        />
+      ) : (
+        <View style={styles.placeholder} />
+      )}
+
+      {/* Play badge indicator on video items (only show when loading completes) */}
+      {isVid && !isLoading && (
+        <View style={styles.videoBadge}>
+          <Ionicons name="play" size={12} color="#fff" />
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+export default function DiaryHub({ visible, close, journalToggle }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
+  const [activeVideoUrl, setActiveVideoUrl] = useState(null);
   const navigation = useNavigation();
 
   useEffect(() => {
@@ -48,6 +174,7 @@ export default function DiaryHub({ visible, close, journalToggle}) {
 
     fetchUser();
   }, []);
+
   useEffect(() => {
     if (currentUserId) {
       fetchUserEntries();
@@ -58,34 +185,27 @@ export default function DiaryHub({ visible, close, journalToggle}) {
     const { data, error } = await supabase
       .from("diary_entries")
       .select("*")
-      .eq("user_id", currentUserId)
+      .eq("user_id", currentUserId);
 
     if (error) {
       console.error("Error fetching User Entry details:", error);
       return;
     }
 
-        if (data) {
-            setUserEntries(data);
-        }
-    };
-    const SortUserEntries = useMemo(
-        () =>
-            userEntries
-                .filter((item) => item.privacy_status === "private")
-                .slice()
-                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
-        [userEntries]
+    if (data) {
+      setUserEntries(data);
+    }
+  };
+
+  const isVideoItem = (item) => {
+    if (!item?.media_url) return false;
+    return (
+      item.media_type === "video" ||
+      item.media_url.endsWith(".mp4") ||
+      item.media_url.endsWith(".mov")
     );
-    
-    // const miniPreview = useVideoPlayer(video.media_url, (miniPreview) => {
-    //         miniPreview.loop = true;
-    //     });
-    
-    // useEffect(() => {
-    //          if (videoUri && miniPreview) miniPreview.play();
-    //      }, [videoUri, miniPreview]);
-    
+  };
+
   return (
     <Modal
       animationType="slide"
@@ -99,12 +219,10 @@ export default function DiaryHub({ visible, close, journalToggle}) {
 
         {/* --- Top Header with Background Asset --- */}
         <ImageBackground
-          // :bulb: Replace uri with require('../../assets/your-header-bg.png') for local images
           source={require("../../assets/profile-hub/hub-bitmoji.png")}
           style={styles.topHeader}
           resizeMode="cover"
         >
-          {/* Back Button */}
           <Pressable
             onPress={close}
             style={({ pressed }) => [
@@ -115,7 +233,6 @@ export default function DiaryHub({ visible, close, journalToggle}) {
             <Ionicons name="chevron-back" size={22} color="#fff" />
           </Pressable>
 
-          {/* Top Right Action Icons */}
           <View style={styles.topRightIcons}>
             <Pressable style={styles.iconCircle}>
               <Ionicons name="share-outline" size={20} color="#fff" />
@@ -128,7 +245,6 @@ export default function DiaryHub({ visible, close, journalToggle}) {
 
         {/* --- White Bottom Sheet --- */}
         <View style={styles.sheetContainer}>
-          {/* Search Bar Section */}
           <View style={styles.searchSection}>
             <View style={styles.searchBar}>
               <Ionicons name="search" size={20} color="#000" style={styles.searchIcon} />
@@ -144,33 +260,36 @@ export default function DiaryHub({ visible, close, journalToggle}) {
             </Pressable>
           </View>
 
-          {/* "Future Self" Bubble / Tag */}
           <View style={styles.bubbleContainer}>
             <View style={styles.futureSelfBubble}>
-              <Text style={styles.futureSelfText}>Future Self</Text>
+              <Text style={styles.futureSelfText}>Dear Future Self</Text>
             </View>
           </View>
 
-          {/* Scrollable Photo Grid */}
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.gridScrollContainer}
           >
             <View style={styles.grid}>
-              {userEntries.map((photo) => (
-                <Pressable
-                  key={photo.id}
-                  style={[
-                    styles.photoWrapper
-                  ]}
-                >
-                  <Image source={{ uri: photo.media_url }} style={styles.photo} />
-                </Pressable>
-              ))}
+              {userEntries.map((item) => {
+                const isVid = isVideoItem(item);
+
+                return (
+                  <GridTile
+                    key={item.id}
+                    item={item}
+                    isVid={isVid}
+                    onLongPress={() => {
+                      if (isVid) {
+                        setActiveVideoUrl(item.media_url);
+                      }
+                    }}
+                  />
+                );
+              })}
             </View>
           </ScrollView>
 
-          {/* Translucent Floating Plus Button */}
           <Pressable
             style={({ pressed }) => [
               styles.translucentPlusButton,
@@ -178,28 +297,35 @@ export default function DiaryHub({ visible, close, journalToggle}) {
             ]}
             onPress={() => {
               close();
-              navigation.navigate("UserTab", { screen: "Camera"});
+              navigation.navigate("UserTab", {
+                screen: "Camera",
+                params: { journalMode: true },
+              });
             }}
-            
           >
             <Ionicons name="add" size={48} color="#fff" />
           </Pressable>
         </View>
+
+        <VideoPreviewOverlay
+          videoUrl={activeVideoUrl}
+          visible={!!activeVideoUrl}
+          onClose={() => setActiveVideoUrl(null)}
+        />
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
-    backgroundColor: "#FFFC00", // Fallback color
+    backgroundColor: "#FFFC00",
   },
   topHeader: {
     paddingTop: 50,
     paddingHorizontal: 16,
-    height: 250, // Height of header section
+    height: 250,
     justifyContent: "space-between",
   },
   iconCircle: {
@@ -217,7 +343,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
-  /* Sheet Container */
   sheetContainer: {
     flex: 1,
     backgroundColor: "#fff",
@@ -226,7 +351,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     overflow: "hidden",
   },
-  /* Search Bar */
   searchSection: {
     flexDirection: "row",
     alignItems: "center",
@@ -259,7 +383,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#000",
   },
-  /* "Future Self" Bubble */
   bubbleContainer: {
     paddingHorizontal: 16,
     marginBottom: 12,
@@ -276,7 +399,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 15,
   },
-  /* Photo Grid */
   gridScrollContainer: {
     paddingBottom: 90,
   },
@@ -289,17 +411,28 @@ const styles = StyleSheet.create({
     width: ITEM_SIZE,
     height: ITEM_SIZE * 1.35,
     backgroundColor: "#E0E0E0",
-  },
-  selectedPhotoWrapper: {
-    borderWidth: 3,
-    borderColor: "#007AFF",
+    position: "relative",
   },
   photo: {
     width: "100%",
     height: "100%",
     resizeMode: "cover",
   },
-  /* Translucent Plus Button */
+  placeholder: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#EFEFEF",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  videoBadge: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    padding: 4,
+    borderRadius: 10,
+  },
   translucentPlusButton: {
     position: "absolute",
     bottom: 24,
@@ -307,11 +440,34 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: "rgba(35, 33, 33, 0.4)", // Semi-transparent overlay style
+    backgroundColor: "rgba(35, 33, 33, 0.4)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.6)",
     alignItems: "center",
     justifyContent: "center",
   },
+  fullScreenContainer: {
+    flex: 1,
+    backgroundColor: "#000",
+    width: width,
+    height: height,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  fullScreenVideo: {
+    width: "100%",
+    height: "100%",
+  },
+  closeButton: {
+    position: "absolute",
+    top: 50,
+    left: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 9999,
+  },
 });
-// photo.selected && styles.selectedPhotoWrapper,
