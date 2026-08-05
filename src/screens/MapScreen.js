@@ -17,8 +17,8 @@ import * as Location from "expo-location";
 import Ionicons from "react-native-vector-icons/Ionicons";
 
 export default function MapScreen({ navigation }) {
-  const tabBarHeight = useBottomTabBarHeight();
-  const insets = useSafeAreaInsets();
+    const insets = useSafeAreaInsets();
+  const tabBarHeight = 80 + insets.bottom;
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 

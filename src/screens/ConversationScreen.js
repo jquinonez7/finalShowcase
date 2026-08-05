@@ -1,163 +1,362 @@
-import React, { useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  SafeAreaView,
   View,
   Text,
-  FlatList,
+  Image,
   TextInput,
   TouchableOpacity,
+  Pressable,
+  FlatList,
+  Modal,
+  StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  StyleSheet,
 } from "react-native";
-
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-export default function ConversationScreen({ route }) {
-  const { chatbotName } = route.params;
+import { supabase } from "../../utils/hooks/supabase";
+import { markSnapOpened } from "../../utils/hooks/chats";
 
-  const [message, setMessage] = useState("");
+const SELF_ACCENT = "#FF2D55"; // red, "ME"
+const OTHER_ACCENT = "#00B7FF"; // blue, everyone else
 
-  const [messages, setMessages] = useState([
-    {
-      id: "1",
-      sender: "bot",
-      name: chatbotName,
-      text: "Hi Sarah",
-      color: "#00A7B5",
-    },
-    {
-      id: "2",
-      sender: "me",
-      name: "ME",
-      text: "hi bob",
-      color: "#FF2D55",
-    },
-  ]);
+// groups messages under a day label instead of stamping every message
+function dayLabel(dateString) {
+  const date = new Date(dateString);
+  const now = new Date();
 
-  const listRef = useRef();
+  const sameDay = (a, b) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
 
-  function sendMessage() {
-    if (!message.trim()) return;
+  if (sameDay(date, now)) return "TODAY";
 
-    setMessages([
-      ...messages,
-      {
-        id: Date.now().toString(),
-        sender: "me",
-        name: "ME",
-        text: message,
-        color: "#FF2D55",
-      },
-    ]);
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (sameDay(date, yesterday)) return "YESTERDAY";
 
-    setMessage("");
-  }
+  return date.toLocaleDateString([], { weekday: "long" }).toUpperCase();
+}
 
-  function renderMessage({ item }) {
-    return (
-      <View style={styles.messageWrapper}>
-        <Text
-          style={[
-            styles.sender,
-            {
-              color: item.color,
-            },
-          ]}
-        >
-          {item.name}
-        </Text>
+/**
+ * Which status icon a snap gets.
+ *
+ * Arrows are things you sent, squares are things you received. Filled
+ * means unopened, hollow means its been seen.
+ */
+function statusIcon(isSelf, opened) {
+  if (isSelf) return opened ? "send-outline" : "send";
+  return opened ? "square-outline" : "square";
+}
 
-        <View
-          style={[
-            styles.messageRow,
-            {
-              borderLeftColor: item.color,
-            },
-          ]}
-        >
-          <Text style={styles.messageText}>{item.text}</Text>
-        </View>
-      </View>
-    );
-  }
+// your own say Delivered, since theres nothing for you to open
+function snapLabel(isSelf, opened) {
+  if (opened) return "Opened";
+  return isSelf ? "Delivered" : "Tap to view";
+}
+
+// one to one chat. route.params: { chatId, name?, avatarUrl? }
+export default function ConversationScreen({ route, navigation }) {
+  const insets = useSafeAreaInsets();
+  const { chatId, name, avatarUrl } = route.params ?? {};
+
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  // the snap currently open full screen, null when nothing is
+  const [viewing, setViewing] = useState(null);
+
+  const listRef = useRef(null);
+
+  // who is sending, so messages can be split into mine and theirs
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        console.log("[chat] user fetch failed:", error.message);
+        return;
+      }
+      setCurrentUserId(data?.user?.id ?? null);
+    };
+
+    fetchUser();
+  }, []);
+
+  // the join pulls each sender's name alongside the message
+  const fetchMessages = async () => {
+    if (!chatId) return;
+
+    const { data, error } = await supabase
+      .from("messages")
+      .select(
+        "id, content, media_url, prompt_text, opened, sender_id, created_at, " +
+          "profiles:sender_id(userName, email, bitmojiUrl)",
+      )
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.log("[chat] messages query failed:", error.message);
+      setMessages([]);
+    } else {
+      setMessages(data ?? []);
+    }
+
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchMessages();
+  }, [chatId]);
+
+  // live updates, so a message from the other device shows up without
+  // pulling to refresh
+  useEffect(() => {
+    if (!chatId) return;
+
+    const channel = supabase
+      .channel(`chat-${chatId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "messages",
+          filter: `chat_id=eq.${chatId}`,
+        },
+        // refetching is simpler than patching the profile join in by hand
+        () => fetchMessages(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [chatId]);
+
+  const handleSend = async () => {
+    const content = draft.trim();
+    if (!content || !currentUserId || !chatId || sending) return;
+
+    setSending(true);
+    // clear right away so it feels responsive
+    setDraft("");
+
+    const { error } = await supabase.from("messages").insert({
+      chat_id: chatId,
+      sender_id: currentUserId,
+      content,
+    });
+
+    if (error) {
+      console.log("[chat] send failed:", error.message);
+      // put it back so nothing typed gets lost
+      setDraft(content);
+    } else {
+      // dont wait on realtime to show your own message
+      fetchMessages();
+    }
+
+    setSending(false);
+  };
+
+  // only ever called for someone else's snap, so this always marks read
+  const openSnap = (message) => {
+    setViewing(message);
+
+    if (!message.opened) {
+      markSnapOpened(message.id).then(fetchMessages);
+    }
+  };
+
+  // day dividers interleaved with the messages, so the list can render
+  // both from one array
+  const rows = messages.reduce((acc, message, i) => {
+    const label = dayLabel(message.created_at);
+    const previous = i > 0 ? dayLabel(messages[i - 1].created_at) : null;
+
+    if (label !== previous) {
+      acc.push({ type: "divider", id: `divider-${message.id}`, label });
+    }
+
+    acc.push({ type: "message", ...message });
+    return acc;
+  }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* HEADER */}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={insets.top}
+    >
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity
+          style={styles.back}
+          onPress={() => navigation.goBack()}
+          hitSlop={8}
+        >
+          <Ionicons name="chevron-back" size={26} color="#000" />
+        </TouchableOpacity>
 
-      {/* <View style={styles.header}>
-        <Ionicons name="chevron-back" size={32} />
-
-        <View style={styles.avatar}>
-          <Text>🙂</Text>
-        </View>
-
-        <Text style={styles.username}>{chatbotName}</Text>
-
-        <View style={styles.headerIcons}>
-          <Ionicons name="call" size={23} />
-
-          <Ionicons name="videocam" size={25} />
-        </View>
-      </View> */}
-
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <FlatList
-          ref={listRef}
-          data={messages}
-          renderItem={renderMessage}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.messages}
-        />
-
-        {/* INPUT AREA */}
-
-        {/* INPUT AREA */}
-
-        <View style={styles.inputBar}>
-          {/* Camera */}
-          <TouchableOpacity>
-            <Ionicons name="camera" size={27} color="#000" />
-          </TouchableOpacity>
-
-          {/* Text Input */}
-          <TextInput
-            value={message}
-            onChangeText={setMessage}
-            placeholder="Chat"
-            style={styles.input}
-            onSubmitEditing={sendMessage}
-          />
-
-          {/* Dynamic Button */}
-          {message.length > 0 ? (
-            <TouchableOpacity onPress={sendMessage} style={styles.sendButton}>
-              <Ionicons name="arrow-up" size={22} color="white" />
-            </TouchableOpacity>
+        <View style={styles.headerAvatar}>
+          {avatarUrl ? (
+            <Image
+              source={{ uri: avatarUrl }}
+              style={styles.headerAvatarImage}
+            />
           ) : (
-            <TouchableOpacity>
-              <Ionicons name="mic" size={24} />
-            </TouchableOpacity>
+            <Text style={styles.headerInitial}>
+              {(name || "?")[0].toUpperCase()}
+            </Text>
           )}
+        </View>
 
-          {/* Emoji */}
-          <TouchableOpacity>
-            <Text style={styles.emoji}>🙂</Text>
-          </TouchableOpacity>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {name || "Chat"}
+        </Text>
 
-          {/* Plus */}
-          <TouchableOpacity>
-            <Ionicons name="add-circle-outline" size={28} />
+        <TouchableOpacity style={styles.headerAction} hitSlop={6}>
+          <Ionicons name="call-outline" size={20} color="#111" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.headerAction} hitSlop={6}>
+          <Ionicons name="videocam-outline" size={20} color="#111" />
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        ref={listRef}
+        data={rows}
+        keyExtractor={(item) => item.id.toString()}
+        contentContainerStyle={styles.listContent}
+        // keeps the newest message in view as they arrive
+        onContentSizeChange={() =>
+          listRef.current?.scrollToEnd({ animated: true })
+        }
+        renderItem={({ item }) => {
+          if (item.type === "divider") {
+            return <Text style={styles.dividerText}>{item.label}</Text>;
+          }
+
+          const isSelf = item.sender_id === currentUserId;
+          const isSnap = Boolean(item.media_url);
+          const accent = isSelf ? SELF_ACCENT : OTHER_ACCENT;
+          const sender = isSelf
+            ? "Me"
+            : item.profiles?.userName || item.profiles?.email || "Someone";
+
+          return (
+            <View style={styles.messageBlock}>
+              {/* uppercase, in the sender's own color */}
+              <Text style={[styles.senderName, { color: accent }]}>
+                {sender.toUpperCase()}
+              </Text>
+
+              <View style={styles.messageRow}>
+                {/* the colored bar is what tells the two sides apart */}
+                <View style={[styles.accentBar, { backgroundColor: accent }]} />
+
+                {isSnap ? (
+                  // a snap. shows as a card rather than the photo itself,
+                  // so it has to be opened. your own are inert, theres
+                  // nothing left to reveal
+                  <Pressable
+                    style={styles.snapCard}
+                    onPress={isSelf ? undefined : () => openSnap(item)}
+                    disabled={isSelf}
+                  >
+                    <Ionicons
+                      name={statusIcon(isSelf, item.opened)}
+                      size={20}
+                      color={accent}
+                      style={styles.snapIcon}
+                    />
+
+                    <View style={styles.snapText}>
+                      <Text style={styles.snapLabel}>
+                        {snapLabel(isSelf, item.opened)}
+                      </Text>
+                      {item.prompt_text ? (
+                        <Text style={styles.snapPrompt} numberOfLines={2}>
+                          {item.prompt_text}
+                        </Text>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                ) : (
+                  <Text style={styles.messageText}>{item.content}</Text>
+                )}
+              </View>
+            </View>
+          );
+        }}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {loading ? "Loading messages..." : "No messages yet — say hi 👋"}
+          </Text>
+        }
+      />
+
+      <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
+        <TouchableOpacity style={styles.cameraButton}>
+          <Ionicons name="camera" size={20} color="#8E8E93" />
+        </TouchableOpacity>
+
+        <View style={styles.inputPill}>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Send a chat"
+            placeholderTextColor="#8E8E93"
+            returnKeyType="send"
+            onSubmitEditing={handleSend}
+            // keeps the keyboard up between messages
+            blurOnSubmit={false}
+          />
+          <TouchableOpacity hitSlop={6}>
+            <Ionicons name="mic-outline" size={20} color="#8E8E93" />
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+        <TouchableOpacity style={styles.iconButton} hitSlop={6}>
+          <Ionicons name="happy-outline" size={24} color="#8E8E93" />
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.iconButton} hitSlop={6}>
+          <Ionicons name="albums-outline" size={22} color="#8E8E93" />
+        </TouchableOpacity>
+      </View>
+
+      {/* full screen snap, tap anywhere to close */}
+      <Modal
+        visible={Boolean(viewing)}
+        animationType="fade"
+        onRequestClose={() => setViewing(null)}
+      >
+        <Pressable style={styles.viewer} onPress={() => setViewing(null)}>
+          {viewing?.media_url ? (
+            <Image
+              source={{ uri: viewing.media_url }}
+              style={styles.viewerImage}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {/* the prompt it was answering, so the snap has context */}
+          {viewing?.prompt_text ? (
+            <View style={[styles.viewerPrompt, { top: insets.top + 20 }]}>
+              <Text style={styles.viewerPromptText}>{viewing.prompt_text}</Text>
+            </View>
+          ) : null}
+        </Pressable>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -165,87 +364,212 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    height: 65,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 12,
-  },
-
-  avatar: {
-    height: 38,
-    width: 38,
-    borderRadius: 19,
-    backgroundColor: "#FFFC00",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 10,
-  },
-
-  username: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginLeft: 10,
-    flex: 1,
-  },
-
-  headerIcons: {
-    flexDirection: "row",
-    gap: 18,
-  },
-
-  messages: {
-    paddingHorizontal: 12,
-    paddingBottom: 20,
-  },
-
-  messageWrapper: {
-    marginVertical: 7,
-  },
-
-  sender: {
-    fontSize: 13,
-    fontWeight: "700",
-    marginBottom: 3,
-  },
-
-  messageRow: {
-    borderLeftWidth: 3,
-    paddingLeft: 8,
-  },
-
-  messageText: {
-    fontSize: 18,
-    color: "#222",
-  },
-
-  inputBar: {
-    height: 55,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 10,
-    gap: 12,
-    borderTopWidth: 1,
-    borderColor: "#eee",
+    paddingBottom: 10,
+    backgroundColor: "#fff",
+  },
+
+  back: {
+    padding: 2,
+    marginRight: 6,
+  },
+
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#E5E5EA",
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+
+  headerAvatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+
+  // stands in when theres no bitmoji
+  headerInitial: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#8E8E93",
+  },
+
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#000",
+  },
+
+  headerAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#F1F1F4",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 6,
+  },
+
+  listContent: {
+    paddingTop: 12,
+    paddingBottom: 24,
+  },
+
+  empty: {
+    textAlign: "center",
+    color: "#8E8E93",
+    marginTop: 40,
+  },
+
+  // just centered text, no rules either side
+  dividerText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#B0B0B5",
+    letterSpacing: 0.8,
+    textAlign: "center",
+    marginVertical: 14,
+  },
+
+  messageBlock: {
+    marginBottom: 14,
+  },
+
+  senderName: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.6,
+    marginBottom: 3,
+    marginLeft: 14,
+  },
+
+  messageRow: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    paddingRight: 14,
+  },
+
+  // runs the full height of whatever sits beside it
+  accentBar: {
+    width: 3,
+    marginRight: 10,
+    marginLeft: 11,
+  },
+
+  messageText: {
+    fontSize: 16,
+    color: "#000",
+    flexShrink: 1,
+    paddingTop: 1,
+  },
+
+  // wide, faint bordered card, the way snapchat draws an unopened snap
+  snapCard: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E4E4E9",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 16,
+  },
+
+  snapIcon: {
+    marginRight: 12,
+  },
+
+  snapText: {
+    flex: 1,
+  },
+
+  snapLabel: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#000",
+  },
+
+  snapPrompt: {
+    fontSize: 13,
+    color: "#8E8E93",
+    marginTop: 3,
+  },
+
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#E5E5EA",
+    backgroundColor: "#fff",
+  },
+
+  // grey circle rather than black, matching the newer snapchat bar
+  cameraButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#F1F1F4",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+  },
+
+  inputPill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F1F4",
+    borderRadius: 20,
+    paddingLeft: 16,
+    paddingRight: 12,
+    height: 38,
+    marginRight: 6,
   },
 
   input: {
     flex: 1,
-    height: 40,
-    backgroundColor: "#F1F1F5",
-    borderRadius: 20,
-    paddingHorizontal: 18,
-    fontSize: 17,
+    fontSize: 16,
+    color: "#000",
   },
 
-  emoji: {
-    fontSize: 25,
+  iconButton: {
+    paddingHorizontal: 5,
   },
-  sendButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: "#0A84FF",
-    justifyContent: "center",
+
+  viewer: {
+    flex: 1,
+    backgroundColor: "#000",
     alignItems: "center",
+    justifyContent: "center",
+  },
+
+  viewerImage: {
+    width: "100%",
+    height: "100%",
+  },
+
+  viewerPrompt: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+
+  viewerPromptText: {
+    color: "#111",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
   },
 });

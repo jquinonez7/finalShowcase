@@ -1,56 +1,95 @@
-import React, { useRef, useState } from "react";
-import {
-    View,
-    Text,
-    ScrollView,
-    TouchableOpacity,
-    StyleSheet,
-    Dimensions,
-} from "react-native";
+import React, { useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+
+const YELLOW = "#FFFC00";
 
 const PROMPTS = [
-    "What made you smile today, even for a second?",
-    "What's a truth you've been avoiding lately?",
-    "What's on your mind right now?",
-];
-const MOODS = [
-    { key: "sad", emoji: "🙁", color: "#B8DDD4" },
-    { key: "happy", emoji: "🙂", color: "#FFD84D" },
-    { key: "great", emoji: "😄", color: "#CDB8FF" },
-    { key: "meh", emoji: "😐", color: "#D6E04D" },
-    { key: "low", emoji: "😞", color: "#A8C8E8" },
+  "What made you smile today, even for a second?",
+  "What's a truth you've been avoiding lately?",
+  "What's on your mind right now?",
 ];
 
-export default function Prompts() {
-    return (
-        <View style={styles.container}>
-      {MOODS.map((mood) => (
-        <TouchableOpacity
-          key={mood.key}
-          style={[
-            styles.button,
-            { backgroundColor: mood.color },
-            selectedMood === mood.key && styles.selected,
-          ]}
-          onPress={() => setSelectedMood(mood.key)}
-        >
-          <Text style={styles.emoji}>{mood.emoji}</Text>
-        </TouchableOpacity>
-      ))}
+// prompt picker shown over the camera in journal mode. mood lives on
+// the shutter now, so this only handles the question
+export default function Prompts({ onStart }) {
+  const [selected, setSelected] = useState(null);
+
+  return (
+    // box-none so taps on empty space still reach the camera behind
+    <View style={styles.container} pointerEvents="box-none">
+      <View style={styles.prompts}>
+        {PROMPTS.map((prompt) => (
+          <TouchableOpacity
+            key={prompt}
+            style={[styles.prompt, selected === prompt && styles.promptSelected]}
+            onPress={() => setSelected(prompt)}
+          >
+            <Text style={styles.promptText}>{prompt}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* greyed out until a prompt is picked */}
+      <TouchableOpacity
+        style={[styles.start, !selected && styles.startDisabled]}
+        disabled={!selected}
+        onPress={() => onStart?.(selected)}
+      >
+        <Text style={styles.startText}>Start</Text>
+      </TouchableOpacity>
     </View>
-    );
+  );
 }
 
 const styles = StyleSheet.create({
-    button: {
-        backgroundColor: "#fbff0b",
-        paddingHorizontal: 22,
-        paddingVertical: 12,
-        borderRadius: 24,
-    },
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+  },
 
-    text: {
-        color: "#090909",
-        fontWeight: "800",
-    },
+  prompts: {
+    paddingHorizontal: 16,
+  },
+
+  // translucent so the camera reads through the card
+  prompt: {
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderRadius: 28,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    marginBottom: 12,
+    alignItems: "center",
+  },
+
+  promptSelected: {
+    backgroundColor: "rgba(255,255,255,0.95)",
+    borderWidth: 2,
+    borderColor: YELLOW,
+  },
+
+  promptText: {
+    color: "#111",
+    fontSize: 17,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  start: {
+    alignSelf: "center",
+    backgroundColor: YELLOW,
+    paddingHorizontal: 34,
+    paddingVertical: 14,
+    borderRadius: 26,
+    marginTop: 12,
+  },
+
+  startDisabled: {
+    opacity: 0.4,
+  },
+
+  startText: {
+    color: "#111",
+    fontSize: 18,
+    fontWeight: "800",
+  },
 });

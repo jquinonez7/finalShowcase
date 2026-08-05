@@ -13,17 +13,18 @@ import {
 } from "react-native";
 
 import { supabase } from "../../utils/hooks/supabase";
-import { saveDiaryEntry } from "../../utils/hooks/diary";
+import { saveDiaryEntry, uploadMedia } from "../../utils/hooks/diary";
+import { sendSnapToFriend } from "../../utils/hooks/chats";
 
 import Icon from "../../assets/Icon.png";
 
 const BLUE = "#4FA8FF";
 const YELLOW = "#FFFC00";
 
-// the only destination that actually saves anything
+// saves privately to the hub rather than sending to anyone
 const DIARY_HUB = "diary-hub";
 
-// rows to hold the story info
+// rows take an emoji in `icon` or a bundled image in `image`, not both
 const STORIES = [
   {
     id: "my-story-friends",
@@ -57,70 +58,92 @@ const STORIES = [
   },
 ];
 
-// send info pushed from the preview. route.params: { photoUri?, videoUri? }
+// send sheet pushed from the preview
+// route.params: { photoUri?, videoUri?, promptText?, mood? }
 export default function SendToScreen({ route, navigation }) {
-  const { photoUri, videoUri } = route.params ?? {};
+  const { photoUri, videoUri, promptText, mood } = route.params ?? {};
+
+  const [userId, setUserId] = useState(null);
   const [friends, setFriends] = useState([]);
   const [loadingFriends, setLoadingFriends] = useState(true);
-  // a set so stories and friends can be picked in any mix
+  // a Set so stories and friends can be picked in any mix
   const [selected, setSelected] = useState(new Set());
   const [sending, setSending] = useState(false);
   const [query, setQuery] = useState("");
 
-  // everyone except you, loads into friends list
   useEffect(() => {
-    const loadFriends = async () => {
+    const load = async () => {
       try {
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
+        const id = session?.user?.id ?? null;
+        setUserId(id);
+
         const { data, error } = await supabase
           .from("profiles")
           .select("id, email, userName, bitmojiUrl")
-          .neq("id", session?.user?.id ?? "")
+          .neq("id", id ?? "")
           .limit(20);
 
         if (error) throw error;
         setFriends(data ?? []);
       } catch (error) {
-        console.log("[sendto] friends query failed:", error.message);
+        console.log("[sendto] load failed:", error.message);
       } finally {
         setLoadingFriends(false);
       }
     };
 
-    loadFriends();
+    load();
   }, []);
 
-  // flips row between selected and not
   const toggle = (id) => {
     setSelected((current) => {
-      // comparing the old value to the new one by reference
+      // copy rather than mutate, react compares by reference
       const updated = new Set(current);
-      // the toggle itself
-      // already in there, take it out
-      // not in there, put it in.
       if (updated.has(id)) updated.delete(id);
       else updated.add(id);
       return updated;
     });
   };
 
-  //send to hub
   const handleSend = async () => {
-    if (sending || selected.size === 0) return;
+    if (sending || selected.size === 0 || !userId) return;
     setSending(true);
 
     try {
-      // set to private, so only you see it in the hub
+      const uri = photoUri || videoUri;
+      if (!uri) throw new Error("nothing to send");
+
+      // uploaded once and reused, so sending to five friends doesnt
+      // upload the same photo five times
+      const mediaUrl = await uploadMedia(uri, userId);
+
       if (selected.has(DIARY_HUB)) {
-        await saveDiaryEntry({ photoUri, videoUri, privacyStatus: "private" });
+        await saveDiaryEntry({
+          mediaUrl,
+          privacyStatus: "private",
+          promptText,
+          mood,
+        });
       }
 
-      // the rest are placeholders
-      const others = [...selected].filter((id) => id !== DIARY_HUB);
-      if (others.length) console.log("[sendto] not wired up:", others);
+      // anything selected that isnt a story is a friend
+      const storyIds = STORIES.map((s) => s.id);
+      const friendIds = [...selected].filter((id) => !storyIds.includes(id));
+
+      // each one lands in that friend's chat as an unopened snap
+      for (const friendId of friendIds) {
+        await sendSnapToFriend({ userId, friendId, mediaUrl, promptText });
+      }
+
+      // the story rows still have nowhere to go
+      const stories = [...selected].filter(
+        (id) => storyIds.includes(id) && id !== DIARY_HUB,
+      );
+      if (stories.length) console.log("[sendto] not wired up:", stories);
 
       // past the preview, back to the camera
       navigation.popToTop();
@@ -140,7 +163,6 @@ export default function SendToScreen({ route, navigation }) {
     return friend?.userName || friend?.email || "Unknown";
   };
 
-  //search for friends
   const visibleFriends = friends.filter((friend) => {
     if (!query) return true;
     const name = friend.userName || friend.email || "";
@@ -168,6 +190,15 @@ export default function SendToScreen({ route, navigation }) {
           />
         </View>
       </View>
+
+      {/* the prompt stays visible right up to sending */}
+      {promptText ? (
+        <View style={styles.promptBanner}>
+          <Text style={styles.promptText} numberOfLines={2}>
+            {promptText}
+          </Text>
+        </View>
+      ) : null}
 
       <ScrollView
         style={styles.scroll}
@@ -210,7 +241,7 @@ export default function SendToScreen({ route, navigation }) {
         )}
       </ScrollView>
 
-      {/* bottom bar that showws selected destinations */}
+      {/* only shows once something is picked */}
       {selected.size > 0 && (
         <View style={styles.sendBar}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -245,7 +276,7 @@ export default function SendToScreen({ route, navigation }) {
   );
 }
 
-// what exists in the row
+// one selectable line, shared by stories and friends
 function Row({
   title,
   subtitle,
@@ -256,7 +287,7 @@ function Row({
   onPress,
   isLast,
 }) {
-
+  // bundled images pass straight through, urls need the {uri} wrapper
   const source = localAvatar ?? (avatarUrl ? { uri: avatarUrl } : null);
 
   return (
@@ -266,14 +297,7 @@ function Row({
     >
       <View style={styles.avatar}>
         {source ? (
-          <Image
-            source={source}
-            style={styles.avatarImage}
-            resizeMode="cover"
-            onError={() =>
-              console.log("[sendto] avatar failed to load:", avatarUrl)
-            }
-          />
+          <Image source={source} style={styles.avatarImage} resizeMode="cover" />
         ) : (
           <Text style={styles.avatarIcon}>{icon}</Text>
         )}
@@ -286,6 +310,7 @@ function Row({
         {subtitle ? <Text style={styles.rowSubtitle}>{subtitle}</Text> : null}
       </View>
 
+      {/* filled when picked, hollow when not */}
       <View style={[styles.radio, selected && styles.radioSelected]}>
         {selected && <Text style={styles.radioCheck}>✓</Text>}
       </View>
@@ -340,6 +365,23 @@ const styles = StyleSheet.create({
     color: "#111",
   },
 
+  // the prompt carried over from the camera
+  promptBanner: {
+    marginHorizontal: 12,
+    marginBottom: 4,
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+
+  promptText: {
+    color: "#111",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
   scroll: {
     flex: 1,
   },
@@ -372,6 +414,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
 
+  // hairline between rows, skipped on the last one
   rowDivider: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#D8D8DC",
@@ -384,6 +427,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E4E4E9",
     alignItems: "center",
     justifyContent: "center",
+    // clips the avatar into the circle
     overflow: "hidden",
     marginRight: 12,
   },

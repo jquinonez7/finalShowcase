@@ -39,8 +39,8 @@ const DATA = [
 ];
 
 export default function StoriesScreen({ route, navigation }) {
-  const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
+  const tabBarHeight = 80 + insets.bottom;
 
   return (
     <View
@@ -64,7 +64,7 @@ export default function StoriesScreen({ route, navigation }) {
             horizontal={true}
             showsHorizontalScrollIndicator={false}
 
-            //contentContainerStyle={styles.stories} commented this out because it prevented story scrolling felt unintuitive
+          //contentContainerStyle={styles.stories} commented this out because it prevented story scrolling felt unintuitive
           >
             <StoriesBitmoji onPress={console.log("bit moooooo")} />
             <StoriesBitmoji />
