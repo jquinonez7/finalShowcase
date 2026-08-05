@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import BitmojiButton from "../components/bitmojiButton";
 
 const YELLOW = "#FFFC00";
 const BLUE = "#0EADFF";
+const RED = "#F23B4F";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -25,16 +26,67 @@ const FILTERS = [
   { key: "new", label: "New" },
 ];
 
-// stand in status lines until unread counts are real
-const STATUSES = [
-  { text: "New Snap", color: "#F23B4F" },
-  { text: "Received", color: "#F23B4F" },
-  { text: "New Chat", color: BLUE },
-  { text: "Opened", color: BLUE },
-];
+const MESSAGE_TABLE = "messages";
 
-// how many rows get the check in nudge
-const STALE_COUNT = 2;
+function formatRelativeTime(timestamp, now = Date.now()) {
+  if (!timestamp) return "";
+
+  const date = new Date(timestamp);
+  const difference = Math.max(0, now - date.getTime());
+
+  const minutes = Math.floor(difference / 60000);
+  const hours = Math.floor(difference / 3600000);
+  const days = Math.floor(difference / 86400000);
+
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes}m`;
+  if (hours < 24) return `${hours}h`;
+  if (days < 7) return `${days}d`;
+
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function getDaysQuiet(timestamp) {
+  if (!timestamp) return null;
+
+  return Math.floor(
+    (Date.now() - new Date(timestamp).getTime()) / 86400000,
+  );
+}
+
+function getMessageStatus(message, currentUserId) {
+  if (!message) return null;
+
+  const sentByMe = message.sender_id === currentUserId;
+  const isSnap = Boolean(message.media_url);
+  const isOpened = message.opened === true;
+  const color = isSnap ? RED : BLUE;
+
+  if (sentByMe) {
+    return {
+      text: isOpened ? "Opened" : "Delivered",
+      color,
+      hollow: isOpened,
+    };
+  }
+
+  if (isOpened) {
+    return {
+      text: "Opened",
+      color,
+      hollow: true,
+    };
+  }
+
+  return {
+    text: isSnap ? "New Snap" : "New Chat",
+    color,
+    hollow: false,
+  };
+}
 
 export default function ChatScreen() {
   const navigation = useNavigation();
@@ -43,78 +95,215 @@ export default function ChatScreen() {
   const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
-  // which row is being opened, so it can show a spinner
   const [opening, setOpening] = useState(null);
+  const [now, setNow] = useState(Date.now());
 
-  // fetches your user id and every other profile in the database
-  // puts those in the list as your "friends
+  const loadChats = useCallback(async (id, showLoader = false) => {
+    if (!id) return;
+
+    if (showLoader) {
+      setLoading(true);
+    }
+
+    try {
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, email, userName, bitmojiUrl")
+        .neq("id", id)
+        .limit(20);
+
+      if (profilesError) throw profilesError;
+
+      const { data: chats, error: chatsError } = await supabase
+        .from("chats")
+        .select("id, user_a, user_b")
+        .or(`user_a.eq.${id},user_b.eq.${id}`);
+
+      if (chatsError) throw chatsError;
+
+      const chatIds = (chats ?? []).map((chat) => chat.id);
+
+      let messages = [];
+
+      if (chatIds.length > 0) {
+        const { data, error: messagesError } = await supabase
+          .from(MESSAGE_TABLE)
+          .select(`
+            id,
+            chat_id,
+            created_at,
+            sender_id,
+            media_url,
+            opened
+          `)
+          .in("chat_id", chatIds)
+          .order("created_at", { ascending: false });
+
+        if (messagesError) throw messagesError;
+
+        messages = data ?? [];
+      }
+
+      const latestMessageByChat = new Map();
+
+      messages.forEach((message) => {
+        if (!latestMessageByChat.has(message.chat_id)) {
+          latestMessageByChat.set(message.chat_id, message);
+        }
+      });
+
+      const chatByFriend = new Map();
+
+      (chats ?? []).forEach((chat) => {
+        const friendId =
+          chat.user_a === id ? chat.user_b : chat.user_a;
+
+        const latestMessage =
+          latestMessageByChat.get(chat.id) ?? null;
+
+        chatByFriend.set(friendId, {
+          chatId: chat.id,
+          latestMessage,
+          lastActivityAt: latestMessage?.created_at ?? null,
+        });
+      });
+
+      const rows = (profiles ?? [])
+        .map((profile) => {
+          const chatInfo = chatByFriend.get(profile.id);
+
+          return {
+            ...profile,
+            chatId: chatInfo?.chatId ?? null,
+            latestMessage: chatInfo?.latestMessage ?? null,
+            lastActivityAt: chatInfo?.lastActivityAt ?? null,
+          };
+        })
+        .sort((a, b) => {
+          if (!a.lastActivityAt && !b.lastActivityAt) {
+            return (a.userName || a.email || "").localeCompare(
+              b.userName || b.email || "",
+            );
+          }
+
+          if (!a.lastActivityAt) return 1;
+          if (!b.lastActivityAt) return -1;
+
+          return (
+            new Date(b.lastActivityAt).getTime() -
+            new Date(a.lastActivityAt).getTime()
+          );
+        });
+
+      setFriends(rows);
+    } catch (error) {
+      console.log("[chat] load failed:", error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const load = async () => {
+    let active = true;
+
+    const start = async () => {
       try {
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
         const id = session?.user?.id ?? null;
+
+        if (!active) return;
+
         setUserId(id);
-
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, email, userName, bitmojiUrl")
-          .neq("id", id ?? "")
-          .limit(20);
-
-        if (error) throw error;
-        setFriends(data ?? []);
+        await loadChats(id, true);
       } catch (error) {
-        console.log("[chat] load failed:", error.message);
-      } finally {
+        console.log("[chat] session load failed:", error.message);
         setLoading(false);
       }
     };
 
-    load();
+    start();
+
+    return () => {
+      active = false;
+    };
+  }, [loadChats]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 60000);
+
+    return () => clearInterval(timer);
   }, []);
 
-  /**
-   * Finds the chat between you and this friend, creating one if you
-   * have never spoken. 
-   */
+  useEffect(() => {
+    if (!userId) return undefined;
+
+    const channel = supabase
+      .channel(`chat-list-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: MESSAGE_TABLE,
+        },
+        () => {
+          setNow(Date.now());
+          loadChats(userId);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadChats, userId]);
+
   const getOrCreateChat = async (friendId) => {
     const { data: existing, error } = await supabase
       .from("chats")
       .select("id")
       .or(
         `and(user_a.eq.${userId},user_b.eq.${friendId}),` +
-        `and(user_a.eq.${friendId},user_b.eq.${userId})`,
+          `and(user_a.eq.${friendId},user_b.eq.${userId})`,
       )
       .maybeSingle();
 
     if (error) throw error;
-    if (existing) return existing.id;
 
-    // first time these two have opened a chat
+    if (existing) {
+      return existing.id;
+    }
+
     const { data: created, error: createError } = await supabase
       .from("chats")
-      .insert({ user_a: userId, user_b: friendId })
+      .insert({
+        user_a: userId,
+        user_b: friendId,
+      })
       .select("id")
       .single();
 
     if (createError) throw createError;
+
     return created.id;
   };
 
   const openChat = async (friend) => {
     if (opening || !userId) return;
+
     setOpening(friend.id);
 
     try {
-      const chatId = await getOrCreateChat(friend.id);
+      const chatId =
+        friend.chatId ?? (await getOrCreateChat(friend.id));
 
       navigation.navigate("Conversation", {
         chatId,
-        // passed through so the header can render before the messages
-        // query has come back
         name: friend.userName || friend.email,
         avatarUrl: friend.bitmojiUrl,
       });
@@ -128,7 +317,9 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <BitmojiButton onPress={() => navigation.navigate("Profile")} />
+        <BitmojiButton
+          onPress={() => navigation.navigate("Profile")}
+        />
 
         <TouchableOpacity style={styles.headerCircle}>
           <Ionicons name="search" size={20} color="#111" />
@@ -138,17 +329,21 @@ export default function ChatScreen() {
 
         <TouchableOpacity style={styles.headerCircle}>
           <Ionicons name="person-add" size={18} color="#111" />
+
           <View style={styles.headerBadge}>
             <Text style={styles.headerBadgeText}>5</Text>
           </View>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.headerCircle}>
-          <Ionicons name="ellipsis-horizontal" size={18} color="#111" />
+          <Ionicons
+            name="ellipsis-horizontal"
+            size={18}
+            color="#111"
+          />
         </TouchableOpacity>
       </View>
 
-      {/* filter row, visual only for now */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -160,18 +355,26 @@ export default function ChatScreen() {
           return (
             <TouchableOpacity
               key={item.key}
-              style={[styles.filter, active && styles.filterActive]}
+              style={[
+                styles.filter,
+                active && styles.filterActive,
+              ]}
               onPress={() => setFilter(item.key)}
             >
               <Text
-                style={[styles.filterText, active && styles.filterTextActive]}
+                style={[
+                  styles.filterText,
+                  active && styles.filterTextActive,
+                ]}
               >
                 {item.label}
               </Text>
 
               {item.badge ? (
                 <View style={styles.filterBadge}>
-                  <Text style={styles.filterBadgeText}>{item.badge}</Text>
+                  <Text style={styles.filterBadgeText}>
+                    {item.badge}
+                  </Text>
                 </View>
               ) : null}
             </TouchableOpacity>
@@ -180,26 +383,42 @@ export default function ChatScreen() {
       </ScrollView>
 
       {loading ? (
-        <ActivityIndicator style={styles.loader} color="#8E8E93" />
+        <ActivityIndicator
+          style={styles.loader}
+          color="#8E8E93"
+        />
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
-          {friends.map((friend, i) => (
-            <ChatRow
-              key={friend.id}
-              name={friend.userName || friend.email}
-              avatarUrl={friend.bitmojiUrl}
-              // the first couple get the nudge, the rest get a status
-              stale={i < STALE_COUNT}
-              daysQuiet={i + 3}
-              status={STATUSES[i % STATUSES.length]}
-              busy={opening === friend.id}
-              onPress={() => openChat(friend)}
-            />
-          ))}
+          {friends.map((friend) => {
+            const daysQuiet = getDaysQuiet(
+              friend.lastActivityAt,
+            );
+
+            const stale =
+              daysQuiet !== null && daysQuiet >= 3;
+
+            return (
+              <ChatRow
+                key={friend.id}
+                name={friend.userName || friend.email}
+                avatarUrl={friend.bitmojiUrl}
+                stale={stale}
+                daysQuiet={daysQuiet}
+                latestMessage={friend.latestMessage}
+                currentUserId={userId}
+                relativeTime={formatRelativeTime(
+                  friend.lastActivityAt,
+                  now,
+                )}
+                hasConversation={Boolean(friend.chatId)}
+                busy={opening === friend.id}
+                onPress={() => openChat(friend)}
+              />
+            );
+          })}
         </ScrollView>
       )}
 
-      {/* floating new chat button */}
       <TouchableOpacity style={styles.fab}>
         <Ionicons name="add" size={34} color="#fff" />
       </TouchableOpacity>
@@ -207,13 +426,35 @@ export default function ChatScreen() {
   );
 }
 
-// one row: avatar, name, status line, and either a nudge or a camera
-function ChatRow({ name, avatarUrl, stale, daysQuiet, status, busy, onPress }) {
+function ChatRow({
+  name,
+  avatarUrl,
+  stale,
+  daysQuiet,
+  latestMessage,
+  currentUserId,
+  relativeTime,
+  hasConversation,
+  busy,
+  onPress,
+}) {
+  const status = getMessageStatus(
+    latestMessage,
+    currentUserId,
+  );
+
   return (
-    <TouchableOpacity style={styles.row} onPress={onPress} disabled={busy}>
+    <TouchableOpacity
+      style={styles.row}
+      onPress={onPress}
+      disabled={busy}
+    >
       <View style={styles.avatar}>
         {avatarUrl ? (
-          <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+          <Image
+            source={{ uri: avatarUrl }}
+            style={styles.avatarImage}
+          />
         ) : (
           <View style={styles.avatarPlaceholder} />
         )}
@@ -227,34 +468,72 @@ function ChatRow({ name, avatarUrl, stale, daysQuiet, status, busy, onPress }) {
         <View style={styles.statusLine}>
           {stale ? (
             <>
-              {/* hollow square, the "waiting on you" marker */}
               <View style={styles.statusSquareHollow} />
+
               <Text style={styles.statusMuted}>
                 You haven't chatted in {daysQuiet} days
               </Text>
             </>
-          ) : (
+          ) : hasConversation && status ? (
             <>
               <View
-                style={[styles.statusSquare, { backgroundColor: status.color }]}
+                style={
+                  status.hollow
+                    ? [
+                        styles.dynamicStatusSquareHollow,
+                        { borderColor: status.color },
+                      ]
+                    : [
+                        styles.statusSquare,
+                        { backgroundColor: status.color },
+                      ]
+                }
               />
-              <Text style={[styles.statusText, { color: status.color }]}>
+
+              <Text
+                style={[
+                  styles.statusText,
+                  { color: status.color },
+                ]}
+              >
                 {status.text}
               </Text>
-              <Text style={styles.statusTime}> · 2h</Text>
+
+              {relativeTime ? (
+                <Text style={styles.statusTime}>
+                  {" "}
+                  · {relativeTime}
+                </Text>
+              ) : null}
             </>
+          ) : (
+            <Text style={styles.statusMuted}>
+              Tap to start chatting
+            </Text>
           )}
         </View>
       </View>
 
       {busy ? (
-        <ActivityIndicator size="small" color="#8E8E93" />
+        <ActivityIndicator
+          size="small"
+          color="#8E8E93"
+        />
       ) : stale ? (
-        <TouchableOpacity style={styles.checkIn} onPress={onPress}>
-          <Text style={styles.checkInText}>Check In? ▶</Text>
+        <TouchableOpacity
+          style={styles.checkIn}
+          onPress={onPress}
+        >
+          <Text style={styles.checkInText}>
+            Check In? ▶
+          </Text>
         </TouchableOpacity>
       ) : (
-        <Ionicons name="camera-outline" size={24} color="#8E8E93" />
+        <Ionicons
+          name="camera-outline"
+          size={24}
+          color="#8E8E93"
+        />
       )}
     </TouchableOpacity>
   );
@@ -274,13 +553,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  headerAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: "#E4E4E9",
-  },
-
   headerCircle: {
     width: 38,
     height: 38,
@@ -290,7 +562,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  // flex 1 so the title takes the middle and the icons sit either side
   headerTitle: {
     flex: 1,
     textAlign: "center",
@@ -306,7 +577,7 @@ const styles = StyleSheet.create({
     minWidth: 18,
     height: 18,
     borderRadius: 9,
-    backgroundColor: "#F23B4F",
+    backgroundColor: RED,
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
@@ -367,7 +638,6 @@ const styles = StyleSheet.create({
     marginTop: 30,
   },
 
-  // room at the bottom so the last row clears the tab bar
   list: {
     paddingBottom: 140,
   },
@@ -387,7 +657,6 @@ const styles = StyleSheet.create({
     height: 54,
     borderRadius: 27,
     backgroundColor: "#E4E4E9",
-    // clips the bitmoji into the circle
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
@@ -421,7 +690,6 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  // filled square, the unread marker
   statusSquare: {
     width: 12,
     height: 12,
@@ -429,13 +697,20 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
 
-  // hollow version, for a chat waiting on you
   statusSquareHollow: {
     width: 12,
     height: 12,
     borderRadius: 3,
     borderWidth: 1.5,
-    borderColor: "#F23B4F",
+    borderColor: RED,
+    marginRight: 6,
+  },
+
+  dynamicStatusSquareHollow: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+    borderWidth: 1.5,
     marginRight: 6,
   },
 
@@ -454,7 +729,6 @@ const styles = StyleSheet.create({
     color: "#8E8E93",
   },
 
-  // the nudge on chats that have gone quiet
   checkIn: {
     backgroundColor: YELLOW,
     paddingHorizontal: 16,
@@ -468,7 +742,6 @@ const styles = StyleSheet.create({
     color: "#111",
   },
 
-  // sits above the tab bar
   fab: {
     position: "absolute",
     right: 20,
