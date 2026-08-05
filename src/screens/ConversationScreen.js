@@ -20,6 +20,7 @@ import { markSnapOpened } from "../../utils/hooks/chats";
 
 const SELF_ACCENT = "#FF2D55"; // red, "ME"
 const OTHER_ACCENT = "#00B7FF"; // blue, everyone else
+const SNAP_COLOR = "#FF2D55"; // real Snapchat colors snaps by content type, not sender
 
 // groups messages under a day label instead of stamping every message
 function dayLabel(dateString) {
@@ -271,7 +272,7 @@ export default function ConversationScreen({ route, navigation }) {
                     <Ionicons
                       name={statusIcon(isSelf, item.opened)}
                       size={20}
-                      color={accent}
+                      color={SNAP_COLOR}
                       style={styles.snapIcon}
                     />
 

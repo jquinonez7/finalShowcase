@@ -47,9 +47,10 @@ export default function PreviewScreen({ route, navigation }) {
     };
 
     // the prompt and mood ride along so the send sheet can save them
-    const openSendTo = () => {
-        navigation.navigate("SendTo", { photoUri, videoUri, promptText, mood });
-    };
+const openSendTo = () => {
+  console.log("[preview] navigating with:", { photoUri, videoUri });
+  navigation.navigate("SendTo", { photoUri, videoUri, promptText, mood });
+};
 
     return (
         <View style={styles.container}>

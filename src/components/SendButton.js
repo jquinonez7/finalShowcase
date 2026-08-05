@@ -15,7 +15,7 @@ export default function SendButton({ photoUri, videoUri }) {
   return (
     <TouchableOpacity
       style={styles.button}
-      onPress={() => navigation.navigate("SendTo", { photoUri, videoUri })}
+      onPress={() => navigation.navigate("Preview", { photoUri, videoUri })}
     >
       <Text style={styles.text}>Send To ▸</Text>
     </TouchableOpacity>
