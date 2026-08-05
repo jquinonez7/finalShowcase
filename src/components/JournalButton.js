@@ -11,19 +11,18 @@ import { saveDiaryEntry } from "../../utils/hooks/diary";
 
 const PURPLE = "#B69CFF";
 
-/**
- * Journal mode. Saves the capture as a private entry, which is what
- * the Hub screen will read back later.
- *
- * Same table as Thoughts, the only difference is privacy_status.
- * onDone fires after a successful save so the parent can close.
- */
-export default function SaveToHub({ photoUri, videoUri, onDone }) {
+// journal mode. saves the capture as a private entry for the hub
+export default function SaveToHub({
+  photoUri,
+  videoUri,
+  promptText,
+  mood,
+  onDone,
+}) {
   const [saving, setSaving] = useState(false);
 
   const handlePress = async () => {
-    // the upload takes a moment, so block repeat taps rather than
-    // writing the same entry twice
+    // block repeat taps so one capture cant write two rows
     if (saving) return;
     setSaving(true);
 
@@ -33,6 +32,8 @@ export default function SaveToHub({ photoUri, videoUri, onDone }) {
         videoUri,
         // private means only the author sees it, unlike Thoughts
         privacyStatus: "private",
+        promptText,
+        mood,
       });
 
       onDone?.();
@@ -69,6 +70,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 12,
     borderRadius: 24,
+    // keeps the pill from collapsing when the spinner swaps in
     minWidth: 130,
     minHeight: 44,
   },
@@ -78,6 +80,7 @@ const styles = StyleSheet.create({
   },
 
   label: {
+    // dark text since the purple is light
     color: "#1A1033",
     fontWeight: "800",
     fontSize: 15,

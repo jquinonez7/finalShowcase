@@ -10,10 +10,14 @@ import {
 
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useNavigation, useRoute } from "@react-navigation/native";
+
 import ToggleMode from "../components/ToggleMode";
 import BitmojiButton from "../components/bitmojiButton";
 import CameraTools from "../components/CameraTools";
 import CaptureButton from "../components/CaptureButton";
+import MoodShutter from "../components/MoodShutter";
+import PromptPill from "../components/PromptPill";
+import Prompts from "../components/Prompts";
 
 const YELLOW = "#FFFC00";
 const PURPLE = "#B69CFF";
@@ -23,37 +27,44 @@ const DOUBLE_TAP_DELAY_MS = 300;
 
 export default function CameraScreen() {
   const navigation = useNavigation();
-  const [bitmojiUrl, setBitmojiUrl] = useState(null);
+  const route = useRoute();
+
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState("back");
   const [torchOn, setTorchOn] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [captureState, setCaptureState] = useState("idle");
   const [journalMode, setJournalMode] = useState(false);
+
+  // the prompt picked before capturing, null until Start
+  const [prompt, setPrompt] = useState(null);
+  // whichever mood is centered in the shutter
+  const [mood, setMood] = useState(null);
+
   const accentColor = journalMode ? PURPLE : YELLOW;
   const cameraRef = useRef(null);
   const lastTapRef = useRef(0);
   const isRecordingRef = useRef(false);
   const stopRequestedRef = useRef(false);
   const longPressFiredRef = useRef(false);
-
-  //gives you the current route object, which holds params
-  const route = useRoute();
+  const isRecording = captureState === "recording";
 
   // the hub's plus button asks for journal mode when it navigates here
   useEffect(() => {
-    //checks whether anyone actually sent the param.
     if (route.params?.journalMode !== undefined) {
-      //sets to params if exists
       setJournalMode(route.params.journalMode);
       // clear it so opening the camera tab normally later doesnt reuse it
       navigation.setParams({ journalMode: undefined });
     }
-    //only reruns when that value chang
   }, [route.params?.journalMode]);
 
+  // leaving journal mode drops the prompt, so coming back starts fresh
+  useEffect(() => {
+    if (!journalMode) setPrompt(null);
+  }, [journalMode]);
+
   if (!permission) {
-    // still checking, stay black 
+    // still checking, stay black
     return <View style={styles.center} />;
   }
 
@@ -73,6 +84,9 @@ export default function CameraScreen() {
       </View>
     );
   }
+
+  // the picker covers the camera until a prompt is chosen
+  const showPrompts = journalMode && !prompt;
 
   const toggleCamera = () => {
     setFacing((current) => (current === "back" ? "front" : "back"));
@@ -99,10 +113,13 @@ export default function CameraScreen() {
       // mirror pic
       mirrored: facing === "front",
       journalMode,
+      // both null outside journal mode, since theres no picker there
+      promptText: journalMode ? prompt : null,
+      mood: journalMode ? mood : null,
     });
   };
 
-  // quick tap of the capture button
+  // quick tap of the shutter
   const takePicture = async () => {
     if (!cameraRef.current || !isCameraReady) {
       // no camera on web or the simulator, go to the preview empty so
@@ -120,7 +137,7 @@ export default function CameraScreen() {
     }
   };
 
-  // hold past the threshold on the capture button
+  // hold past the threshold on the shutter
   const startRecording = async () => {
     if (!cameraRef.current || isRecordingRef.current) return;
 
@@ -160,7 +177,7 @@ export default function CameraScreen() {
     setCaptureState("idle");
   };
 
-  // every release of the capture button, tap or hold
+  // every release of the shutter, tap or hold
   const stopRecording = () => {
     if (isRecordingRef.current) {
       // normal case, ends the recordAsync above
@@ -177,7 +194,6 @@ export default function CameraScreen() {
     longPressFiredRef.current = false;
     setCaptureState("idle");
   };
-
 
   return (
     <View style={styles.container}>
@@ -202,36 +218,63 @@ export default function CameraScreen() {
         />
       )}
 
+      {/* pick a prompt before the camera controls appear */}
+      {showPrompts && <Prompts onStart={setPrompt} />}
+
+      {/* the chosen prompt parks at the top, tap it to pick again */}
+      {journalMode && prompt && (
+        <PromptPill prompt={prompt} top={140} onPress={() => setPrompt(null)} />
+      )}
+
       {/* box-none lets taps through to the camera but keeps the
           buttons inside tappable */}
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.topBar}>
-          <BitmojiButton onPress={() => navigation.navigate("Profile")}
-          />
+          {!isRecording && (
+            <BitmojiButton onPress={() => navigation.navigate("Profile")} />
+          )}
         </View>
 
-        <CameraTools
-          torchOn={torchOn}
-          onFlip={toggleCamera}
-          onToggleTorch={() => setTorchOn((t) => !t)}
-        />
-
-        <CaptureButton
-          state={captureState}
-          accentColor={accentColor}
-          onPressIn={() => setCaptureState("pressed")}
-          onPress={takePicture}
-          onLongPress={startRecording}
-          onPressOut={stopRecording}
-        />
+        {/* hidden behind the picker so nothing competes for taps */}
+        {!showPrompts && !isRecording && (
+          <CameraTools
+            torchOn={torchOn}
+            onFlip={toggleCamera}
+            onToggleTorch={() => setTorchOn((t) => !t)}
+          />
+        )}
+        {/* journal mode swaps the plain shutter for the mood carousel */}
+        {showPrompts ? (
+          <View />
+        ) : journalMode ? (
+          <MoodShutter
+            state={captureState}
+            accentColor={accentColor}
+            onMoodChange={setMood}
+            onCapture={takePicture}
+            onRecordStart={startRecording}
+            onRecordStop={stopRecording}
+          />
+        ) : (
+          <CaptureButton
+            state={captureState}
+            accentColor={accentColor}
+            onPressIn={() => setCaptureState("pressed")}
+            onPress={takePicture}
+            onLongPress={startRecording}
+            onPressOut={stopRecording}
+          />
+        )}
       </SafeAreaView>
 
-      <ToggleMode
-        top={70}
-        accentColor={accentColor}
-        activeSwitch={journalMode ? 2 : 1}
-        onChange={(val) => setJournalMode(val === 2)}
-      />
+      {!isRecording && (
+        <ToggleMode
+          top={70}
+          accentColor={accentColor}
+          activeSwitch={journalMode ? 2 : 1}
+          onChange={(val) => setJournalMode(val === 2)}
+        />
+      )}
     </View>
   );
 }
@@ -245,6 +288,7 @@ const styles = StyleSheet.create({
   modeTint: {
     backgroundColor: "rgba(120,80,220,0.18)",
   },
+
   center: {
     flex: 1,
     backgroundColor: "#000",

@@ -8,28 +8,23 @@ import {
     SafeAreaView,
 } from "react-native";
 import { useVideoPlayer, VideoView } from "expo-video";
+
 import BottomBar from "../components/Bottombar";
-import SendToScreen from "./SendToScreen";
-
 import SaveSnap from "../components/SaveSnap";
-
 import ThoughtsButton from "../components/ThoughtsButton";
 import StoryButton from "../components/StoryButton";
-import PreviewToolbar from "../../assets/PreviewToolbar.png";
-import JournalButton from "../components/JournalButton";
 import SendButton from "../components/SendButton";
 import LetItGoButton from "../components/LetItGoButton";
+import PromptPill from "../components/PromptPill";
+import PreviewToolbar from "../../assets/PreviewToolbar.png";
 
-/**
- * Stack screen, pushed over the tab navigator after a capture. Being on
- * the stack rather than inside the tabs is what hides the tab bar.
- *
- * route.params: { photoUri?, videoUri?, bitmojiUri? }
- */
+// pushed over the tab navigator after a capture
+// route.params: { photoUri?, videoUri?, mirrored?, journalMode?, promptText?, mood? }
 export default function PreviewScreen({ route, navigation }) {
-    const { photoUri, videoUri, bitmojiUri, mirrored, journalMode } = route.params ?? {};
+    const { photoUri, videoUri, mirrored, journalMode, promptText, mood } =
+        route.params ?? {};
 
-    // camera player that plays vid uri
+    // plays the video uri, ignored for photos
     const player = useVideoPlayer(videoUri, (videoPlayer) => {
         videoPlayer.loop = true;
     });
@@ -38,26 +33,28 @@ export default function PreviewScreen({ route, navigation }) {
         if (videoUri && player) player.play();
     }, [videoUri, player]);
 
-    const mediaStyle = [StyleSheet.absoluteFill, mirrored && styles.flipHorizontal];
+    // front camera captures come out un-mirrored, flip those back
+    const mediaStyle = [
+        StyleSheet.absoluteFill,
+        mirrored && styles.flipHorizontal,
+    ];
 
-    // pause before leaving or the player keeps looping audio in the
-    // background after this screen pops
+    // pause first or the player keeps looping audio after this pops
     const close = () => {
+        console.log("[preview] close called");
         player?.pause();
         navigation.goBack();
     };
-    <SendButton
-        onPress={() => navigation.navigate("SendTo", { photoUri, videoUri })}
-    />
+
+    // the prompt and mood ride along so the send sheet can save them
+    const openSendTo = () => {
+        navigation.navigate("SendTo", { photoUri, videoUri, promptText, mood });
+    };
+
     return (
         <View style={styles.container}>
             {photoUri && (
-                <Image
-                    source={{ uri: photoUri }}
-                    style={mediaStyle}
-                    resizeMode="cover"
-                />
-
+                <Image source={{ uri: photoUri }} style={mediaStyle} resizeMode="cover" />
             )}
 
             {videoUri && (
@@ -69,24 +66,38 @@ export default function PreviewScreen({ route, navigation }) {
                 />
             )}
 
+            {/* the prompt stays visible over the capture */}
+            {promptText ? <PromptPill prompt={promptText} top={150} /> : null}
+
             <SafeAreaView style={styles.topLeft}>
                 <TouchableOpacity style={styles.iconButton} onPress={close}>
-                    <Text style={styles.iconText}>X</Text>
+                    <Text style={styles.iconText}>✕</Text>
                 </TouchableOpacity>
             </SafeAreaView>
-            <Image source={PreviewToolbar} style={styles.toolbar} resizeMode="contain" />
+
+            <Image
+                source={PreviewToolbar}
+                style={styles.toolbar}
+                resizeMode="contain"
+            />
+
             <BottomBar>
                 {journalMode ? (
                     <>
-                        <SaveSnap />
+                        <SaveSnap onPress={close} />
                         <LetItGoButton onPress={close} />
-                        <ThoughtsButton photoUri={photoUri} videoUri={videoUri} />
+                        <ThoughtsButton
+                            photoUri={photoUri}
+                            videoUri={videoUri}
+                            promptText={promptText}
+                            mood={mood}
+                        />
                     </>
                 ) : (
                     <>
-                        <SaveSnap />
-                        <StoryButton />
-                        <SendButton onPress={() => navigation.navigate("SendTo", { photoUri, videoUri })} />
+                        <SaveSnap onPress={close} />
+                        <StoryButton photoUri={photoUri} videoUri={videoUri} />
+                        <SendButton onPress={openSendTo} />
                     </>
                 )}
             </BottomBar>
@@ -121,13 +132,6 @@ const styles = StyleSheet.create({
         fontSize: 20,
     },
 
-    bitmojiOverlay: {
-        position: "absolute",
-        width: 180,
-        height: 180,
-        left: 24,
-        bottom: 170,
-    },
     toolbar: {
         position: "absolute",
         right: 12,
@@ -136,26 +140,8 @@ const styles = StyleSheet.create({
         height: 600,
     },
 
-    // wrapper only exists to position SaveToHub, the button styles itself
-    saveSlot: {
-        position: "absolute",
-        left: 16,
-        bottom: 40,
-    },
-
-    sendButton: {
-        alignItems: "center",
-        backgroundColor: "#4FA8FF",
-        paddingHorizontal: 22,
-        paddingVertical: 12,
-        borderRadius: 24,
-    },
-
-    sendButtonText: {
-        fontWeight: "800",
-        color: "#fff",
-    },
+    // display only, the file on disk is still un-mirrored
     flipHorizontal: {
         transform: [{ scaleX: -1 }],
-    }
+    },
 });

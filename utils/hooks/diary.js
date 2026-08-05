@@ -3,10 +3,12 @@ import { decode } from "base64-arraybuffer";
 
 import { supabase } from "./supabase";
 
+// must match the bucket name in supabase exactly
 const BUCKET = "diary_media";
 
-// copies a capture into storage and returns a link to it
-async function uploadMedia(uri, userId) {
+// copies a capture into storage and returns a link to it. exported so a
+// capture going to the hub and to friends only uploads once
+export async function uploadMedia(uri, userId) {
   // the camera file has to be read as base64 to upload it
   const base64 = await FileSystem.readAsStringAsync(uri, {
     encoding: "base64",
@@ -30,17 +32,19 @@ async function uploadMedia(uri, userId) {
   return data.publicUrl;
 }
 
-// uploads the capture, then writes a row pointing at it
+// writes a diary row. pass mediaUrl if the file is already uploaded,
+// otherwise it uploads first
 export async function saveDiaryEntry({
   photoUri,
   videoUri,
+  mediaUrl,
   privacyStatus,
   content = null,
   promptText = null,
+  mood = null,
 }) {
-  // sets uri to either photo or vid uri
   const uri = photoUri || videoUri;
-  if (!uri) throw new Error("nothing to save");
+  if (!uri && !mediaUrl) throw new Error("nothing to save");
 
   // needed for the folder name and the row's user_id
   const {
@@ -49,16 +53,16 @@ export async function saveDiaryEntry({
 
   if (!session?.user) throw new Error("not signed in");
 
-  // upload first so a row never points at a missing file
-  const mediaUrl = await uploadMedia(uri, session.user.id);
+  const url = mediaUrl ?? (await uploadMedia(uri, session.user.id));
 
   // the row holds the link, not the photo
   const { error } = await supabase.from("diary_entries").insert({
     user_id: session.user.id,
-    media_url: mediaUrl,
+    media_url: url,
     privacy_status: privacyStatus,
     content,
     prompt_text: promptText,
+    mood,
   });
 
   // tagged so the log says which half failed
