@@ -14,6 +14,7 @@ import { supabase } from "../../utils/hooks/supabase";
 import { useAuthentication } from "../../utils/hooks/useAuthentication";
 import DiaryHub from "../components/DiaryHub";
 
+
 // Cleaned up data matching the new Snapchat mockup UI
 const postToItems = [
   {
@@ -41,6 +42,8 @@ const postToItems = [
 ];
 
 export default function ProfileScreen() {
+  const [profileInfo , setProfileInfo]= useState([]);
+  const [curentUserId, setCurrentUserId] = useState(null);
   const navigation = useNavigation();
   const { user } = useAuthentication();
   const [hubVisible, setHubVisible] = useState(false);
@@ -56,6 +59,21 @@ export default function ProfileScreen() {
       console.error("Unexpected error:", error);
     }
   };
+  useEffect(() => {
+      const fetchUser = async () => {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) {
+          console.log("[hub] user fetch failed:", error.message);
+          return;
+        }
+        setCurrentUserId(data?.user?.id ?? null);
+        let tempId = currentUserId;
+        console.log(tempId);
+
+      };
+  
+      fetchUser();
+    }, []);
 
   return (
     <View style={styles.screen}>
