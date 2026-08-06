@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Image,
   Text,
@@ -13,6 +13,7 @@ import { useNavigation } from "@react-navigation/native";
 import { supabase } from "../../utils/hooks/supabase";
 import { useAuthentication } from "../../utils/hooks/useAuthentication";
 import DiaryHub from "../components/DiaryHub";
+import { useFocusEffect } from "@react-navigation/native";
 
 
 // Cleaned up data matching the new Snapchat mockup UI
@@ -59,21 +60,19 @@ export default function ProfileScreen() {
       console.error("Unexpected error:", error);
     }
   };
-  useEffect(() => {
-      const fetchUser = async () => {
-        const { data, error } = await supabase.auth.getUser();
-        if (error) {
-          console.log("[hub] user fetch failed:", error.message);
-          return;
-        }
-        setCurrentUserId(data?.user?.id ?? null);
-        let tempId = currentUserId;
-        console.log(tempId);
 
-      };
-  
-      fetchUser();
-    }, []);
+ useEffect(() => {
+     const fetchUser = async () => {
+       const { data, error } = await supabase.auth.getUser();
+       if (error) {
+         console.log("[hub] user fetch failed:", error.message);
+         return;
+       }
+       setCurrentUserId(data?.user?.id ?? null);
+     };
+ 
+     fetchUser();
+   }, []);
 
   return (
     <View style={styles.screen}>
