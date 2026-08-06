@@ -10,7 +10,6 @@ import {
   TextInput,
   Dimensions,
   StatusBar,
-  ImageBackground,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -21,15 +20,11 @@ import { supabase } from "../../utils/hooks/supabase";
 
 const { width } = Dimensions.get("window");
 
-// 3 columns with a clean 3px gap
 const GAP = 3;
 const COLUMNS = 3;
 const ITEM_SIZE = (width - GAP * (COLUMNS - 1)) / COLUMNS;
-
-// a second in, since the very first frame is often black
 const THUMBNAIL_TIME_MS = 1000;
 
-// emoji per mood key, matching the ones in MoodShutter
 const MOOD_EMOJI = {
   low: "😞",
   sad: "🙁",
@@ -38,27 +33,23 @@ const MOOD_EMOJI = {
   meh: "😐",
 };
 
-// an Image cant render an mp4, so the two need telling apart
 function isVideo(url = "") {
   return url.endsWith(".mp4") || url.endsWith(".mov");
 }
 
-export default function DiaryHub({ visible, close }) {
+export default function DiaryHub({ visible, close, hubBitmoji }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
-  // generated video stills, keyed by entry id
   const [thumbnails, setThumbnails] = useState({});
-  // the entry open full screen, null when none is
   const [viewing, setViewing] = useState(null);
 
   const navigation = useNavigation();
 
-  // only gets a source when a video is open, so photos cost nothing
   const player = useVideoPlayer(
     viewing && isVideo(viewing.media_url) ? viewing.media_url : null,
     (p) => {
       p.loop = true;
-    },
+    }
   );
 
   useEffect(() => {
@@ -94,27 +85,21 @@ export default function DiaryHub({ visible, close }) {
     setUserEntries(data ?? []);
   };
 
-  // refetches every time the hub opens, so a snap saved a minute ago
-  // is already there
   useEffect(() => {
     if (currentUserId && visible) {
       fetchUserEntries();
     }
   }, [currentUserId, visible]);
 
-  // only the private ones belong here, newest first
   const entries = useMemo(
     () =>
       userEntries
         .filter((item) => item.privacy_status === "private")
         .slice()
         .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
-    [userEntries],
+    [userEntries]
   );
 
-  // pulls a still out of each video so the grid isnt a wall of play
-  // badges. one at a time rather than all at once, since each one has
-  // to download the video to read a frame
   useEffect(() => {
     let cancelled = false;
 
@@ -126,11 +111,10 @@ export default function DiaryHub({ visible, close }) {
         try {
           const { uri } = await VideoThumbnails.getThumbnailAsync(
             entry.media_url,
-            { time: THUMBNAIL_TIME_MS },
+            { time: THUMBNAIL_TIME_MS }
           );
 
           if (cancelled) return;
-          // set as each one lands, so tiles fill in progressively
           setThumbnails((current) => ({ ...current, [entry.id]: uri }));
         } catch (error) {
           console.log("[hub] thumbnail failed:", error.message);
@@ -159,13 +143,27 @@ export default function DiaryHub({ visible, close }) {
       statusBarTranslucent={true}
     >
       <View style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-        <ImageBackground
-          source={require("../../assets/profile-hub/hub-bitmoji.png")}
-          style={styles.topHeader}
-          resizeMode="cover"
-        >
+        {/* --- 1. HEADER CONTAINER --- */}
+        <View style={styles.topHeader}>
+          {/* BACKGROUND ASSET LAYER (Aligned strictly to the top edge) */}
+          <Image
+            source={require("../../assets/profile-hub/BGHUB.png")}
+            style={styles.bgAssetImage}
+            resizeMode="cover"
+          />
+
+          {/* BITMOJI OVERLAY LAYER */}
+          {hubBitmoji ? (
+            <Image
+              source={{ uri: hubBitmoji }}
+              style={styles.headerBitmoji}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {/* Controls */}
           <Pressable
             onPress={close}
             style={({ pressed }) => [
@@ -184,7 +182,7 @@ export default function DiaryHub({ visible, close }) {
               <Ionicons name="settings-outline" size={20} color="#fff" />
             </Pressable>
           </View>
-        </ImageBackground>
+        </View>
 
         <View style={styles.sheetContainer}>
           <View style={styles.searchSection}>
@@ -220,7 +218,6 @@ export default function DiaryHub({ visible, close }) {
             <View style={styles.grid}>
               {entries.map((entry) => {
                 const video = isVideo(entry.media_url);
-                // the still if its ready, the video url if its a photo
                 const preview = video
                   ? thumbnails[entry.id]
                   : entry.media_url;
@@ -234,20 +231,15 @@ export default function DiaryHub({ visible, close }) {
                     {preview ? (
                       <Image source={{ uri: preview }} style={styles.photo} />
                     ) : (
-                      // dark card until the thumbnail finishes
                       <View style={styles.videoTile} />
                     )}
 
-                    {/* play badge so a video tile is obvious even once
-                        its showing a still frame */}
                     {video ? (
                       <View style={styles.playBadge}>
                         <Ionicons name="play" size={14} color="#fff" />
                       </View>
                     ) : null}
 
-                    {/* the prompt across the bottom, so you can see what
-                        each entry was answering without opening it */}
                     {entry.prompt_text ? (
                       <View style={styles.tilePrompt}>
                         <Text style={styles.tilePromptText} numberOfLines={2}>
@@ -291,7 +283,6 @@ export default function DiaryHub({ visible, close }) {
         </View>
       </View>
 
-      {/* one entry full screen, tap anywhere to close */}
       <Modal
         visible={Boolean(viewing)}
         animationType="fade"
@@ -344,7 +335,7 @@ export default function DiaryHub({ visible, close }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFC00",
+    backgroundColor: "#efdae4",
   },
 
   topHeader: {
@@ -352,6 +343,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 250,
     justifyContent: "space-between",
+    position: "relative",
+    overflow: "hidden",
+  },
+
+  // Absolute positioning fixes the background asset to start strictly at top: 0
+  bgAssetImage: {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "200%",
+  transform: [{ scaleX: 1.25 }], // Stretches width by 25% horizontally
+},
+
+  headerBitmoji: {
+    position: "absolute",
+    top: 60,
+    width: "100%",
+    height: "200%",
   },
 
   iconCircle: {
@@ -451,7 +461,6 @@ const styles = StyleSheet.create({
     width: ITEM_SIZE,
     height: ITEM_SIZE * 1.35,
     backgroundColor: "#E0E0E0",
-    // keeps the prompt strip inside the tile
     overflow: "hidden",
   },
 
@@ -461,7 +470,6 @@ const styles = StyleSheet.create({
     resizeMode: "cover",
   },
 
-  // shown while the thumbnail is still generating
   videoTile: {
     width: "100%",
     height: "100%",
@@ -480,7 +488,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  // dark strip so the prompt stays readable over any photo
   tilePrompt: {
     position: "absolute",
     left: 0,
