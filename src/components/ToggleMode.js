@@ -1,14 +1,13 @@
 import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Image, Pressable, StyleSheet } from "react-native";
+import Ionicons from "react-native-vector-icons/Ionicons";
 
-const OPTIONS = ["Normal", "Journal"];
+const GHOST_LOGO = require("../../assets/snapchat/ghostlogo.png");
 
 /**
- * Normal / Journal pill, pinned near the top of the camera.
- *
- * Fully controlled: activeSwitch decides which side is lit, so the
- * parent can flip it from anywhere. 1 is Normal, 2 is Journal, matching
- * what the old library used.
+ * Normal / Journal switch, pinned to the left edge of the camera as two
+ * stacked icon buttons — ghost for Normal, book for Journal — instead of
+ * a text pill.
  */
 export default function ToggleMode({
   activeSwitch = 1,
@@ -17,30 +16,28 @@ export default function ToggleMode({
   top = 110,
 }) {
   return (
-    // box-none so the full width wrapper doesnt eat taps meant for the camera
+    // box-none so the wrapper doesnt eat taps meant for the camera
     <View style={[styles.wrapper, { top }]} pointerEvents="box-none">
-      <View style={styles.track}>
-        {OPTIONS.map((label, i) => {
-          // the library counted from 1, so index 0 is value 1
-          const value = i + 1;
-          const active = activeSwitch === value;
+      <Pressable
+        style={[
+          styles.option,
+          activeSwitch === 1 && { backgroundColor: accentColor },
+        ]}
+        onPress={() => onChange?.(1)}
+      >
+        <Image source={GHOST_LOGO} style={styles.ghost} resizeMode="contain" />
+      </Pressable>
 
-          return (
-            <Pressable
-              key={label}
-              style={[
-                styles.option,
-                active && { backgroundColor: accentColor },
-              ]}
-              onPress={() => onChange?.(value)}
-            >
-              <Text style={[styles.label, active && styles.labelActive]}>
-                {label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <Pressable
+        style={[
+          styles.option,
+          styles.journalOption,
+          activeSwitch === 2 && { backgroundColor: accentColor },
+        ]}
+        onPress={() => onChange?.(2)}
+      >
+        <Ionicons name="book-outline" size={26} color="#fff" />
+      </Pressable>
     </View>
   );
 }
@@ -48,33 +45,25 @@ export default function ToggleMode({
 const styles = StyleSheet.create({
   wrapper: {
     position: "absolute",
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-
-  // the dark pill the two options sit inside
-  track: {
-    flexDirection: "row",
-    backgroundColor: "rgba(0,0,0,0.35)",
-    borderRadius: 100,
-    padding: 4,
+    left: 16,
+    gap: 10,
   },
 
   option: {
-    paddingHorizontal: 26,
-    paddingVertical: 8,
-    borderRadius: 100,
+    width: 56,
+    height: 70,
+    borderRadius: 28,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
-  label: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 14,
+  journalOption: {
+    height: 64,
   },
 
-  // dark text since the accent colors are both light
-  labelActive: {
-    color: "#111",
+  ghost: {
+    width: 28,
+    height: 28,
   },
 });

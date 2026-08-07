@@ -49,13 +49,14 @@ const styles = StyleSheet.create({
 
   prompts: {
     paddingHorizontal: 16,
+     marginTop: 100, 
   },
 
   // translucent so the camera reads through the card
   prompt: {
     backgroundColor: "rgba(255,255,255,0.72)",
     borderRadius: 28,
-    paddingVertical: 18,
+    paddingVertical: 16,
     paddingHorizontal: 24,
     marginBottom: 12,
     alignItems: "center",
@@ -69,7 +70,7 @@ const styles = StyleSheet.create({
 
   promptText: {
     color: "#111",
-    fontSize: 17,
+    fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
   },

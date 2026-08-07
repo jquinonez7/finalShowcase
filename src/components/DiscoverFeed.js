@@ -1,130 +1,81 @@
-import react from "react";
+import React from "react";
 import {
   View,
   Text,
   StyleSheet,
-  Image,
-  ScrollView,
-  ImageBackground,
   Pressable,
-  useState,
+  Image,
+  useWindowDimensions,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { fontHeader } from "../../assets/themes/font";
-import { colors } from "../../assets/themes/colors";
-import { useNavigation } from "@react-navigation/native";
-import Svg, { Text as SvgText } from "react-native-svg";
 
+export default function DiscoverFeed({ title, subtitle, uri }) {
+  const { width } = useWindowDimensions();
+  const cardWidth = (width - 12 * 2 - 12) / 2; // container padding + gap
 
-export default function DiscoverFeed() {
-  const navigation = useNavigation();
-  //  const [discoverCard, setDiscoverCard] = useState(false);
-  //  const handlePress = () => {
-  //   setDiscoverCard(true);
-  // };
-
-  // const handleClose = () => {
-  //   setDiscoverCard(false);
-  // };
   return (
-    <View style={styles.FeedContainer}>
-      <View style={styles.Square}>
-        <Pressable
-          onPress={() => {
-            navigation.navigate("DiscoverCard");
-          }}
-        >
-          <ImageBackground
-            style={styles.FeedImage}
-            imageStyle={{ borderRadius: 20 }}
-            source={{
-              uri: "https://eccles.utah.edu/wp-content/uploads/2017/02/snapchat.jpg",
-            }}
-          >
-            <Svg height="100%" width="100%" style={styles.svgText}>
-              <SvgText
-              stroke="black"
-              strokeWidth={.4}
-              fill="white"
-              fontSize="16"
-              fontWeight="bold"
-              x="100%"
-              y="100%"
-              textAnchor="end"
-            > 
-            My Name Is Chillahs
-            </SvgText>
-
-            </Svg>
-
-            {/* <Text style={[styles.FeedText]}>Hello My Name Is Chillahs</Text> */}
-          </ImageBackground>
-        </Pressable>
+    <Pressable style={[styles.card, { width: cardWidth }]}>
+      <Image source={{ uri }} style={styles.image} />
+      {subtitle && (
+        <View style={styles.captionPill}>
+          <Text style={styles.star}>⭐</Text>
+          <Text style={styles.captionText} numberOfLines={2}>
+            {subtitle}
+          </Text>
+        </View>
+      )}
+      <View style={styles.footer}>
+        <Text style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  FeedContainer: {
-    width: "100%",
-    display: "flex",
-    flex: 2,
-    gap: 10,
-    justifyContent: "space-between",
-    flexWrap: "wrap",
+  card: {
+    aspectRatio: 9 / 14,
+    borderRadius: 14,
+    overflow: "hidden",
+    backgroundColor: "#111",
   },
-  Square: {
-    display: "flex",
-
+  image: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  captionPill: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    right: 8,
     flexDirection: "row",
-    justifyContent: "space-around",
-    gap: 20,
-    width: "100%",
-    alignItems: "center",
-    // backgroundColor: "pink",
-    alignItems: "center",
-    borderRadius: 20,
-    flexWrap: "wrap",
+    alignItems: "flex-start",
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
   },
-  FeedImage: {
-    width: 165,
-    height: 320,
-    display: "flex",
-    justifyContent: "center",
-    borderRadius: 50,
-    backgroundColor:"blue",
-    borderRadius:20,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+  star: {
+    fontSize: 11,
+    marginRight: 4,
   },
-  FeedText: {
+  captionText: {
+    color: "#fff",
+    fontSize: 11,
+    flex: 1,
+  },
+  footer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     padding: 8,
-    fontWeight: "900",
-    fontSize: 14,
-    color: "black",
-    position: "absolute",
-    right: 15,
-    bottom: 15,
-    textShadowColor: "#292929",
-
-    textShadowRadius: 5,
-    textShadowOpacity: 10,
+    backgroundColor: "rgba(0,0,0,0.35)",
   },
-  svgText: {
-    position: "absolute",
-    bottom: 8,
-    right: 3,
-    // alignItems: 'center',
-    // marginBottom: "25",
-    // marginRight: "6"
+  title: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
   },
-  smallFeedText: {},
 });

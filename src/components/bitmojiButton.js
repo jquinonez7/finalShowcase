@@ -10,12 +10,9 @@ import {
 import { supabase } from "../../utils/hooks/supabase";
 
 /**
- * Round avatar button in the top bar. Pulls the signed in user's bitmoji
- * from their profiles row and hands the url up to the parent on press,
- * which uses it to stick an overlay on the camera/preview.
- *
- * selected: whether the parent currently has this bitmoji applied, just
- * drives the yellow ring
+ * Round avatar button used in headers to jump to the Profile screen.
+ * Shows the signed-in user's bitmoji when they have one, a placeholder
+ * dot otherwise — but always fires onPress either way.
  */
 export default function BitmojiButton({ onPress, selected = false }) {
   const [bitmojiUrl, setBitmojiUrl] = useState(null);
@@ -59,8 +56,7 @@ export default function BitmojiButton({ onPress, selected = false }) {
   return (
     <TouchableOpacity
       style={[styles.button, selected && styles.buttonSelected]}
-      onPress={() => bitmojiUrl && onPress?.(bitmojiUrl)}
-      disabled={loading || !bitmojiUrl}
+      onPress={() => onPress?.(bitmojiUrl)}
     >
       {loading ? (
         <ActivityIndicator size="small" color="#fff" />

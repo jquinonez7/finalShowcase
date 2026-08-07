@@ -1,78 +1,68 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  ScrollView,
-  Pressable,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { fontHeader } from "../../assets/themes/font";
+import { View, Text, StyleSheet, Pressable, Image } from "react-native";
 import { colors } from "../../assets/themes/colors";
-import { createStackNavigator } from "@react-navigation/stack";
-import { useNavigation } from "@react-navigation/native";
 
-// import StoriesBitmoji from "../components/StoriesBitmoji";
+const RING_SIZE = 84;
 
-import Header from "../components/Header";
-
-export default function StoriesBitmoji() {
-  const navigation = useNavigation();
+export default function StoriesBitmoji({ name, uri, hasBadge, onPress }) {
   return (
-    <View style={styles.myBitmoji}>
-      <Pressable //added a presable to give the story interaction
-        style={[styles.profile, styles.buttons]}
-        onPress={() => {
-          navigation.navigate("FriendStory");
-        }}
-      >
-        <Image
-          style={styles.bitmojiImage}
-          source={require("../../assets/snapchat/personalBitmoji.png")}
-        />
-      </Pressable>
-      <View style={styles.bitmojiTextContainer}>
-        <Text style={styles.bitmojiText}>Name</Text>
-        <Text style={styles.usernameText}>Username</Text>
+    <Pressable style={styles.container} onPress={onPress}>
+      <View style={styles.ring}>
+        <Image source={{ uri }} style={styles.avatar} />
       </View>
-    </View>
+      {hasBadge && (
+        <View style={styles.badge}>
+          <Text style={styles.badgeIcon}>👤+</Text>
+        </View>
+      )}
+      <Text style={styles.name} numberOfLines={1}>
+        {name}
+      </Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  myBitmoji: {
+  container: {
+    alignItems: "center",
+    width: RING_SIZE + 12,
+    marginRight: 12,
+  },
+  ring: {
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    borderWidth: 3,
+    borderColor: "#B026FF",
+    padding: 3,
     alignItems: "center",
     justifyContent: "center",
-    paddingRight: 10,
   },
-  bitmojiImage: {
-    width: 60,
-    height: 60,
+  avatar: {
+    width: "100%",
+    height: "100%",
+    borderRadius: RING_SIZE / 2,
+    backgroundColor: "#eee",
   },
-  bitmojiTextContainer: {
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 4,
+  badge: {
+    position: "absolute",
+    bottom: 22,
+    right: 4,
+    backgroundColor: "#B026FF",
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
-  bitmojiText: {
-    alignSelf: "center",
-    fontSize: 12,
+  badgeIcon: {
+    color: "#fff",
+    fontSize: 11,
     fontWeight: "700",
   },
-  usernameText: {
-    fontSize: 8,
-    fontWeight: "700",
-    opacity: 0.5,
-  },
-  Friends: {
-    textAlign: "left",
-    paddingLeft: 20,
-    paddingBottom: 20,
+  name: {
+    marginTop: 6,
+    fontSize: 13,
+    fontWeight: "600",
     color: colors.primary,
-    fontSize: fontHeader.fontSize,
-    fontFamily: fontHeader.fontFamily,
-    fontWeight: fontHeader.fontWeight,
+    textAlign: "center",
   },
 });

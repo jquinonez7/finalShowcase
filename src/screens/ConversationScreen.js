@@ -16,7 +16,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { supabase } from "../../utils/hooks/supabase";
-import { markSnapOpened } from "../../utils/hooks/chats";
+import { markSnapOpened, markMessagesOpened } from "../../utils/hooks/chats";
 
 const SELF_ACCENT = "#FF2D55"; // red, "ME"
 const OTHER_ACCENT = "#00B7FF"; // blue, everyone else
@@ -58,10 +58,10 @@ function snapLabel(isSelf, opened) {
   return isSelf ? "Delivered" : "Tap to view";
 }
 
-// one to one chat. route.params: { chatId, name?, avatarUrl? }
+// one to one chat. route.params: { chatId, name?, avatarUrl?, showCheckInPrompt? }
 export default function ConversationScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
-  const { chatId, name, avatarUrl } = route.params ?? {};
+  const { chatId, name, avatarUrl, showCheckInPrompt } = route.params ?? {};
 
   const [currentUserId, setCurrentUserId] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -174,6 +174,20 @@ export default function ConversationScreen({ route, navigation }) {
     }
   };
 
+  // text chats have no tap-to-reveal step, so just being in this thread
+  // counts as opening them — snaps stay untouched, those need the tap above
+  useEffect(() => {
+    const unreadTextIds = messages
+      .filter(
+        (m) => m.sender_id !== currentUserId && !m.media_url && !m.opened,
+      )
+      .map((m) => m.id);
+
+    if (unreadTextIds.length) {
+      markMessagesOpened(unreadTextIds).then(fetchMessages);
+    }
+  }, [messages, currentUserId]);
+
   // day dividers interleaved with the messages, so the list can render
   // both from one array
   const rows = messages.reduce((acc, message, i) => {
@@ -227,6 +241,17 @@ export default function ConversationScreen({ route, navigation }) {
           <Ionicons name="videocam-outline" size={20} color="#111" />
         </TouchableOpacity>
       </View>
+
+      {/* only shows up when you arrived here via the "Check In?" button,
+          not just because check-in mode happens to be on for this friend */}
+      {showCheckInPrompt && (
+        <View style={styles.checkInBanner}>
+          <Text style={styles.checkInBannerText}>
+            Haven't checked in with {name} recently? Send them a quick “How's
+            your week treating you?”
+          </Text>
+        </View>
+      )}
 
       <FlatList
         ref={listRef}
@@ -415,6 +440,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 6,
+  },
+
+  checkInBanner: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 4,
+  },
+
+  checkInBannerText: {
+    fontSize: 14,
+    color: "#8E8E93",
+    textAlign: "center",
+    fontStyle: "italic",
   },
 
   listContent: {

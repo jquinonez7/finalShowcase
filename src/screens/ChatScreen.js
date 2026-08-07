@@ -10,9 +10,16 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { supabase } from "../../utils/hooks/supabase";
 import BitmojiButton from "../components/bitmojiButton";
+import FriendSheet from "../components/FriendSheet";
+import {
+  getCheckInMap,
+  getCheckInEnabled,
+  setCheckInEnabled,
+  getOrCreateDemoDaysQuiet,
+} from "../../utils/hooks/checkIn";
 
 const YELLOW = "#FFFC00";
 const BLUE = "#0EADFF";
@@ -27,6 +34,13 @@ const FILTERS = [
 ];
 
 const MESSAGE_TABLE = "messages";
+// a friend counts as "gone quiet" once it's been this many days since
+// the last message either direction
+const QUIET_DAYS_THRESHOLD = 3;
+// DEMO: the this-many least-recently-active friends get seeded into
+// check-in mode with a fake stale duration, so the button has something
+// to show before any real chat history is actually 3+ days old
+const DEMO_CHECKIN_COUNT = 4;
 
 function formatRelativeTime(timestamp, now = Date.now()) {
   if (!timestamp) return "";
@@ -57,6 +71,10 @@ function getDaysQuiet(timestamp) {
   );
 }
 
+/**
+ * Arrows are things you sent, squares are things you received — matches
+ * the real Snapchat legend. Filled means unopened, hollow means seen.
+ */
 function getMessageStatus(message, currentUserId) {
   if (!message) return null;
 
@@ -67,24 +85,24 @@ function getMessageStatus(message, currentUserId) {
 
   if (sentByMe) {
     return {
-      text: isOpened ? "Opened" : "Delivered",
+      text: isOpened ? "" : "Delivered",
       color,
-      hollow: isOpened,
+      icon: isOpened ? "send-outline" : "send",
     };
   }
 
   if (isOpened) {
     return {
-      text: "Opened",
+      text: "Recieved",
       color,
-      hollow: true,
+      icon: "square-outline",
     };
   }
 
   return {
     text: isSnap ? "New Snap" : "New Chat",
     color,
-    hollow: false,
+    icon: "square",
   };
 }
 
@@ -97,6 +115,12 @@ export default function ChatScreen() {
   const [filter, setFilter] = useState("all");
   const [opening, setOpening] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [sheetFriend, setSheetFriend] = useState(null);
+  const [checkInEnabled, setCheckInEnabledState] = useState(false);
+  // { [friendId]: true } for everyone on the check-in / best-friends list
+  const [checkInMap, setCheckInMap] = useState({});
+  // { [friendId]: number } fake "days quiet" for the demo-seeded friends
+  const [demoDaysMap, setDemoDaysMap] = useState({});
 
   const loadChats = useCallback(async (id, showLoader = false) => {
     if (!id) return;
@@ -195,6 +219,19 @@ export default function ChatScreen() {
           );
         });
 
+      // DEMO: the least-recently-active friends (the tail of this sorted
+      // list) get switched into check-in mode automatically, with a fake
+      // stale duration if their real activity isn't actually old enough
+      const demoTargets = rows.slice(-DEMO_CHECKIN_COUNT);
+      const demoDays = {};
+
+      for (const friend of demoTargets) {
+        const alreadyOn = await getCheckInEnabled(friend.id);
+        if (!alreadyOn) await setCheckInEnabled(friend.id, true);
+        demoDays[friend.id] = await getOrCreateDemoDaysQuiet(friend.id);
+      }
+
+      setDemoDaysMap(demoDays);
       setFriends(rows);
     } catch (error) {
       console.log("[chat] load failed:", error.message);
@@ -230,6 +267,21 @@ export default function ChatScreen() {
       active = false;
     };
   }, [loadChats]);
+
+  // refreshes every time this tab regains focus, so coming back from a
+  // conversation always shows the latest opened/delivered state even if
+  // the realtime subscription below never fires. loadChats finishes its
+  // demo seeding before the check-in map is re-read, so freshly-seeded
+  // friends show up right away
+  useFocusEffect(
+    useCallback(() => {
+      if (!userId) return;
+
+      loadChats(userId).then(() => {
+        getCheckInMap().then(setCheckInMap);
+      });
+    }, [userId, loadChats]),
+  );
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -271,6 +323,7 @@ export default function ChatScreen() {
         `and(user_a.eq.${userId},user_b.eq.${friendId}),` +
           `and(user_a.eq.${friendId},user_b.eq.${userId})`,
       )
+      .limit(1)
       .maybeSingle();
 
     if (error) throw error;
@@ -293,7 +346,9 @@ export default function ChatScreen() {
     return created.id;
   };
 
-  const openChat = async (friend) => {
+  // withCheckInPrompt is only true when this came from the "Check In?"
+  // button, so the reminder banner in the thread only shows up then
+  const openChat = async (friend, withCheckInPrompt = false) => {
     if (opening || !userId) return;
 
     setOpening(friend.id);
@@ -306,12 +361,36 @@ export default function ChatScreen() {
         chatId,
         name: friend.userName || friend.email,
         avatarUrl: friend.bitmojiUrl,
+        showCheckInPrompt: withCheckInPrompt,
       });
     } catch (error) {
       console.log("[chat] could not open chat:", error.message);
     } finally {
       setOpening(null);
     }
+  };
+
+  const openFriendSheet = async (friend) => {
+    setSheetFriend(friend);
+    setCheckInEnabledState(await getCheckInEnabled(friend.id));
+  };
+
+  const closeFriendSheet = () => setSheetFriend(null);
+
+  const toggleCheckIn = async (value) => {
+    setCheckInEnabledState(value);
+
+    if (!sheetFriend) return;
+
+    await setCheckInEnabled(sheetFriend.id, value);
+
+    // reflect it in the list immediately instead of waiting for refocus
+    setCheckInMap((prev) => {
+      const next = { ...prev };
+      if (value) next[sheetFriend.id] = true;
+      else delete next[sheetFriend.id];
+      return next;
+    });
   };
 
   return (
@@ -390,19 +469,27 @@ export default function ChatScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
           {friends.map((friend) => {
-            const daysQuiet = getDaysQuiet(
-              friend.lastActivityAt,
-            );
+            const realDaysQuiet = getDaysQuiet(friend.lastActivityAt);
+            // falls back to the demo value only when real activity isn't
+            // already old enough on its own
+            const daysQuiet =
+              realDaysQuiet !== null && realDaysQuiet >= QUIET_DAYS_THRESHOLD
+                ? realDaysQuiet
+                : demoDaysMap[friend.id] ?? realDaysQuiet;
 
-            const stale =
-              daysQuiet !== null && daysQuiet >= 3;
+            // only nudge for people you've actually put on the check-in
+            // list — everyone else just shows their normal snap status
+            const showCheckIn =
+              Boolean(checkInMap[friend.id]) &&
+              daysQuiet !== null &&
+              daysQuiet >= QUIET_DAYS_THRESHOLD;
 
             return (
               <ChatRow
                 key={friend.id}
                 name={friend.userName || friend.email}
                 avatarUrl={friend.bitmojiUrl}
-                stale={stale}
+                showCheckIn={showCheckIn}
                 daysQuiet={daysQuiet}
                 latestMessage={friend.latestMessage}
                 currentUserId={userId}
@@ -413,6 +500,8 @@ export default function ChatScreen() {
                 hasConversation={Boolean(friend.chatId)}
                 busy={opening === friend.id}
                 onPress={() => openChat(friend)}
+                onCheckIn={() => openChat(friend, true)}
+                onLongPress={() => openFriendSheet(friend)}
               />
             );
           })}
@@ -422,6 +511,22 @@ export default function ChatScreen() {
       <TouchableOpacity style={styles.fab}>
         <Ionicons name="add" size={34} color="#fff" />
       </TouchableOpacity>
+
+      <FriendSheet
+        visible={Boolean(sheetFriend)}
+        friend={
+          sheetFriend
+            ? {
+                id: sheetFriend.id,
+                name: sheetFriend.userName || sheetFriend.email,
+                avatarUrl: sheetFriend.bitmojiUrl,
+              }
+            : null
+        }
+        checkInEnabled={checkInEnabled}
+        onToggleCheckIn={toggleCheckIn}
+        onClose={closeFriendSheet}
+      />
     </SafeAreaView>
   );
 }
@@ -429,7 +534,7 @@ export default function ChatScreen() {
 function ChatRow({
   name,
   avatarUrl,
-  stale,
+  showCheckIn,
   daysQuiet,
   latestMessage,
   currentUserId,
@@ -437,6 +542,8 @@ function ChatRow({
   hasConversation,
   busy,
   onPress,
+  onCheckIn,
+  onLongPress,
 }) {
   const status = getMessageStatus(
     latestMessage,
@@ -447,6 +554,7 @@ function ChatRow({
     <TouchableOpacity
       style={styles.row}
       onPress={onPress}
+      onLongPress={onLongPress}
       disabled={busy}
     >
       <View style={styles.avatar}>
@@ -466,9 +574,14 @@ function ChatRow({
         </Text>
 
         <View style={styles.statusLine}>
-          {stale ? (
+          {showCheckIn ? (
             <>
-              <View style={styles.statusSquareHollow} />
+              <Ionicons
+                name="square-outline"
+                size={14}
+                color={RED}
+                style={styles.statusIcon}
+              />
 
               <Text style={styles.statusMuted}>
                 You haven't chatted in {daysQuiet} days
@@ -476,18 +589,11 @@ function ChatRow({
             </>
           ) : hasConversation && status ? (
             <>
-              <View
-                style={
-                  status.hollow
-                    ? [
-                        styles.dynamicStatusSquareHollow,
-                        { borderColor: status.color },
-                      ]
-                    : [
-                        styles.statusSquare,
-                        { backgroundColor: status.color },
-                      ]
-                }
+              <Ionicons
+                name={status.icon}
+                size={14}
+                color={status.color}
+                style={styles.statusIcon}
               />
 
               <Text
@@ -519,10 +625,10 @@ function ChatRow({
           size="small"
           color="#8E8E93"
         />
-      ) : stale ? (
+      ) : showCheckIn ? (
         <TouchableOpacity
           style={styles.checkIn}
-          onPress={onPress}
+          onPress={onCheckIn}
         >
           <Text style={styles.checkInText}>
             Check In? ▶
@@ -690,27 +796,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  statusSquare: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-    marginRight: 6,
-  },
-
-  statusSquareHollow: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-    borderWidth: 1.5,
-    borderColor: RED,
-    marginRight: 6,
-  },
-
-  dynamicStatusSquareHollow: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-    borderWidth: 1.5,
+  statusIcon: {
     marginRight: 6,
   },
 
