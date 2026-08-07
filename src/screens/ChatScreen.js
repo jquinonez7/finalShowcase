@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -41,6 +41,9 @@ const QUIET_DAYS_THRESHOLD = 3;
 // check-in mode with a fake stale duration, so the button has something
 // to show before any real chat history is actually 3+ days old
 const DEMO_CHECKIN_COUNT = 4;
+// a bulk opened-update fires one realtime event per row, so reloads get
+// collapsed into one after the burst settles
+const RELOAD_DEBOUNCE_MS = 500;
 
 function formatRelativeTime(timestamp, now = Date.now()) {
   if (!timestamp) return "";
@@ -122,6 +125,10 @@ export default function ChatScreen() {
   // { [friendId]: number } fake "days quiet" for the demo-seeded friends
   const [demoDaysMap, setDemoDaysMap] = useState({});
 
+  // mount already loads once, so the first focus shouldnt load again
+  const didInitialLoad = useRef(false);
+  const reloadTimer = useRef(null);
+
   const loadChats = useCallback(async (id, showLoader = false) => {
     if (!id) return;
 
@@ -130,19 +137,23 @@ export default function ChatScreen() {
     }
 
     try {
-      const { data: profiles, error: profilesError } = await supabase
-        .from("profiles")
-        .select("id, email, userName, bitmojiUrl")
-        .neq("id", id)
-        .limit(20);
+      // these two dont depend on each other, so they go out together
+      const [
+        { data: profiles, error: profilesError },
+        { data: chats, error: chatsError },
+      ] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id, email, userName, bitmojiUrl")
+          .neq("id", id)
+          .limit(20),
+        supabase
+          .from("chats")
+          .select("id, user_a, user_b")
+          .or(`user_a.eq.${id},user_b.eq.${id}`),
+      ]);
 
       if (profilesError) throw profilesError;
-
-      const { data: chats, error: chatsError } = await supabase
-        .from("chats")
-        .select("id, user_a, user_b")
-        .or(`user_a.eq.${id},user_b.eq.${id}`);
-
       if (chatsError) throw chatsError;
 
       const chatIds = (chats ?? []).map((chat) => chat.id);
@@ -219,23 +230,32 @@ export default function ChatScreen() {
           );
         });
 
+      // paint the list before doing any of the demo bookkeeping below
+      setFriends(rows);
+      setLoading(false);
+
       // DEMO: the least-recently-active friends (the tail of this sorted
       // list) get switched into check-in mode automatically, with a fake
-      // stale duration if their real activity isn't actually old enough
+      // stale duration if their real activity isn't actually old enough.
+      // deliberately not awaited — it's a dozen serial asyncstorage hops
+      // and the list shouldn't wait on cosmetics
       const demoTargets = rows.slice(-DEMO_CHECKIN_COUNT);
-      const demoDays = {};
 
-      for (const friend of demoTargets) {
-        const alreadyOn = await getCheckInEnabled(friend.id);
-        if (!alreadyOn) await setCheckInEnabled(friend.id, true);
-        demoDays[friend.id] = await getOrCreateDemoDaysQuiet(friend.id);
-      }
+      (async () => {
+        const demoDays = {};
 
-      setDemoDaysMap(demoDays);
-      setFriends(rows);
+        for (const friend of demoTargets) {
+          const alreadyOn = await getCheckInEnabled(friend.id);
+          if (!alreadyOn) await setCheckInEnabled(friend.id, true);
+          demoDays[friend.id] = await getOrCreateDemoDaysQuiet(friend.id);
+        }
+
+        setDemoDaysMap(demoDays);
+        // seeding may have added people, so re-read what the list reads
+        setCheckInMap(await getCheckInMap());
+      })();
     } catch (error) {
       console.log("[chat] load failed:", error.message);
-    } finally {
       setLoading(false);
     }
   }, []);
@@ -270,12 +290,17 @@ export default function ChatScreen() {
 
   // refreshes every time this tab regains focus, so coming back from a
   // conversation always shows the latest opened/delivered state even if
-  // the realtime subscription below never fires. loadChats finishes its
-  // demo seeding before the check-in map is re-read, so freshly-seeded
-  // friends show up right away
+  // the realtime subscription below never fires
   useFocusEffect(
     useCallback(() => {
       if (!userId) return;
+
+      // the mount effect covers the first focus, dont double-load
+      if (!didInitialLoad.current) {
+        didInitialLoad.current = true;
+        getCheckInMap().then(setCheckInMap);
+        return;
+      }
 
       loadChats(userId).then(() => {
         getCheckInMap().then(setCheckInMap);
@@ -304,13 +329,20 @@ export default function ChatScreen() {
           table: MESSAGE_TABLE,
         },
         () => {
-          setNow(Date.now());
-          loadChats(userId);
+          // marking a thread read updates every row at once, which would
+          // otherwise kick off one full reload per message
+          if (reloadTimer.current) clearTimeout(reloadTimer.current);
+
+          reloadTimer.current = setTimeout(() => {
+            setNow(Date.now());
+            loadChats(userId);
+          }, RELOAD_DEBOUNCE_MS);
         },
       )
       .subscribe();
 
     return () => {
+      if (reloadTimer.current) clearTimeout(reloadTimer.current);
       supabase.removeChannel(channel);
     };
   }, [loadChats, userId]);

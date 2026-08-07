@@ -106,7 +106,7 @@ export default function StoriesScreen({ navigation }) {
         <Text style={styles.topBarTitle}>Stories</Text>
 
         <IconButton>🔔</IconButton>
-        <IconButton badge={4}>👤➕</IconButton>
+        <IconButton badge={4}>👤</IconButton>
         <IconButton>•••</IconButton>
       </View>
 
