@@ -269,7 +269,7 @@ export default function CameraScreen() {
 
       {!isRecording && (
         <ToggleMode
-          top={70}
+          top={130}
           accentColor={accentColor}
           activeSwitch={journalMode ? 2 : 1}
           onChange={(val) => setJournalMode(val === 2)}
