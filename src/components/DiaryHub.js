@@ -17,6 +17,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import * as VideoThumbnails from "expo-video-thumbnails";
 
 import { supabase } from "../../utils/hooks/supabase";
+import ResourcesModal from "./ResourcesModal";
 
 const { width } = Dimensions.get("window");
 
@@ -42,6 +43,7 @@ export default function DiaryHub({ visible, close, hubBitmoji }) {
   const [userEntries, setUserEntries] = useState([]);
   const [thumbnails, setThumbnails] = useState({});
   const [viewing, setViewing] = useState(null);
+  const [resourcesVisible, setResourcesVisible] = useState(false);
 
   const navigation = useNavigation();
 
@@ -204,12 +206,13 @@ export default function DiaryHub({ visible, close, hubBitmoji }) {
               <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
           </View>
-
+          <Pressable>
           <View style={styles.bubbleContainer}>
             <View style={styles.futureSelfBubble}>
-              <Text style={styles.futureSelfText}>Future Self</Text>
+              <Text style={styles.futureSelfText}>Dear Future Self</Text>
             </View>
           </View>
+          </Pressable>
 
           <ScrollView
             showsVerticalScrollIndicator={false}
@@ -249,9 +252,20 @@ export default function DiaryHub({ visible, close, hubBitmoji }) {
                     ) : null}
 
                     {entry.mood ? (
-                      <Text style={styles.tileMood}>
-                        {MOOD_EMOJI[entry.mood] ?? ""}
-                      </Text>
+                      <Pressable 
+                        onPress={() => {
+                          // Check if the mood is 'sad' (or 'low')
+                          if (entry.mood?.toLowerCase() === "sad") {
+                            setResourcesVisible(true);
+                          }
+                        }}
+                        style={styles.moodPressable}
+                        hitSlop={8}
+                      > 
+                        <Text style={styles.tileMood}>
+                          {MOOD_EMOJI[entry.mood?.toLowerCase()] ?? ""}
+                        </Text>
+                      </Pressable>
                     ) : null}
                   </Pressable>
                 );
@@ -328,6 +342,10 @@ export default function DiaryHub({ visible, close, hubBitmoji }) {
           </View>
         </Pressable>
       </Modal>
+      <ResourcesModal
+        visible={resourcesVisible}
+        close={() => setResourcesVisible(false)}
+      />
     </Modal>
   );
 }
@@ -359,8 +377,9 @@ const styles = StyleSheet.create({
 
   headerBitmoji: {
     position: "absolute",
-    top: 60,
-    width: "100%",
+    top: 30,
+    right:-10,
+    width: "120%",
     height: "200%",
   },
 
@@ -383,8 +402,9 @@ const styles = StyleSheet.create({
 
   sheetContainer: {
     flex: 1,
+    marginTop: -30,
     backgroundColor: "#fff",
-    borderTopLeftRadius: 28,
+    borderTopLeftRadius: 30,
     borderTopRightRadius: 28,
     paddingTop: 16,
     overflow: "hidden",
@@ -504,12 +524,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 13,
   },
-
-  tileMood: {
+  // Fix: The Pressable gets absolute positioning in the top right
+  moodPressable: {
     position: "absolute",
     top: 6,
     right: 6,
-    fontSize: 18,
+    zIndex: 10, // Keeps it on top of the image/video badge
+  },
+
+  // Fix: Text no longer needs absolute positioning inside the Pressable
+  tileMood: {
+    fontSize: 22,
   },
 
   empty: {
