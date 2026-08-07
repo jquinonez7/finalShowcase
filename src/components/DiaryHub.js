@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal,
   StyleSheet,
@@ -10,33 +10,59 @@ import {
   TextInput,
   Dimensions,
   StatusBar,
-  ImageBackground,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-const { width } = Dimensions.get("window");
-//Supabase stuff
-import { useState, useEffect, useMemo } from "react";
-import { supabase } from "../../utils/hooks/supabase";
-//for the navigate to camera button
 import { useNavigation } from "@react-navigation/native";
-const STORAGE_BUCKET = "diary-media";
-const DIARY_FOLDER = "diary-entries";
+import { useVideoPlayer, VideoView } from "expo-video";
+import * as VideoThumbnails from "expo-video-thumbnails";
 
+import { supabase } from "../../utils/hooks/supabase";
 
-// Grid Math: 3 columns with a clean 3px gap
+const { width } = Dimensions.get("window");
+
 const GAP = 3;
 const COLUMNS = 3;
 const ITEM_SIZE = (width - GAP * (COLUMNS - 1)) / COLUMNS;
+const THUMBNAIL_TIME_MS = 1000;
 
-export default function DiaryHub({ visible, close, journalToggle }) {
+const MOOD_EMOJI = {
+  low: "😞",
+  sad: "🙁",
+  happy: "🙂",
+  great: "😄",
+  meh: "😐",
+};
+
+function isVideo(url = "") {
+  return url.endsWith(".mp4") || url.endsWith(".mov");
+}
+
+export default function DiaryHub({ visible, close, hubBitmoji }) {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [userEntries, setUserEntries] = useState([]);
+  const [thumbnails, setThumbnails] = useState({});
+  const [viewing, setViewing] = useState(null);
+
   const navigation = useNavigation();
+
+  const player = useVideoPlayer(
+    viewing && isVideo(viewing.media_url) ? viewing.media_url : null,
+    (p) => {
+      p.loop = true;
+    }
+  );
+
+  useEffect(() => {
+    if (viewing && isVideo(viewing.media_url) && player) {
+      player.play();
+    }
+  }, [viewing, player]);
+
   useEffect(() => {
     const fetchUser = async () => {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
-        console.error("Error fetching current user:", error);
+        console.log("[hub] user fetch failed:", error.message);
         return;
       }
       setCurrentUserId(data?.user?.id ?? null);
@@ -44,55 +70,100 @@ export default function DiaryHub({ visible, close, journalToggle }) {
 
     fetchUser();
   }, []);
-  useEffect(() => {
-    if (currentUserId) {
-      fetchUserEntries();
-    }
-  }, [currentUserId]);
 
   const fetchUserEntries = async () => {
     const { data, error } = await supabase
       .from("diary_entries")
       .select("*")
-      .eq("user_id", currentUserId)
+      .eq("user_id", currentUserId);
 
     if (error) {
-      console.error("Error fetching User Entry details:", error);
+      console.log("[hub] entries query failed:", error.message);
       return;
     }
 
-    if (data) {
-      setUserEntries(data);
-    }
+    setUserEntries(data ?? []);
   };
-  const SortUserEntries = useMemo(
+
+  useEffect(() => {
+    if (currentUserId && visible) {
+      fetchUserEntries();
+    }
+  }, [currentUserId, visible]);
+
+  const entries = useMemo(
     () =>
       userEntries
         .filter((item) => item.privacy_status === "private")
         .slice()
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
     [userEntries]
   );
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const generate = async () => {
+      for (const entry of entries) {
+        if (cancelled) return;
+        if (!isVideo(entry.media_url) || thumbnails[entry.id]) continue;
+
+        try {
+          const { uri } = await VideoThumbnails.getThumbnailAsync(
+            entry.media_url,
+            { time: THUMBNAIL_TIME_MS }
+          );
+
+          if (cancelled) return;
+          setThumbnails((current) => ({ ...current, [entry.id]: uri }));
+        } catch (error) {
+          console.log("[hub] thumbnail failed:", error.message);
+        }
+      }
+    };
+
+    generate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entries]);
+
+  const closeViewer = () => {
+    player?.pause();
+    setViewing(null);
+  };
+
   return (
-    //changed so allows to slide out of modal
     <Modal
       animationType="slide"
-      presentationStyle="pageSheet"
+      transparent={false}
       visible={visible}
       onRequestClose={close}
+      statusBarTranslucent={true}
     >
       <View style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-        {/* --- Top Header with Background Asset --- */}
-        <ImageBackground
-          // :bulb: Replace uri with require('../../assets/your-header-bg.png') for local images
-          source={require("../../assets/profile-hub/hub-bitmoji.png")}
-          style={styles.topHeader}
-          resizeMode="cover"
-        >
-          {/* Back Button */}
+        {/* --- 1. HEADER CONTAINER --- */}
+        <View style={styles.topHeader}>
+          {/* BACKGROUND ASSET LAYER (Aligned strictly to the top edge) */}
+          <Image
+            source={require("../../assets/profile-hub/BGHUB.png")}
+            style={styles.bgAssetImage}
+            resizeMode="cover"
+          />
+
+          {/* BITMOJI OVERLAY LAYER */}
+          {hubBitmoji ? (
+            <Image
+              source={{ uri: hubBitmoji }}
+              style={styles.headerBitmoji}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {/* Controls */}
           <Pressable
             onPress={close}
             style={({ pressed }) => [
@@ -103,7 +174,6 @@ export default function DiaryHub({ visible, close, journalToggle }) {
             <Ionicons name="chevron-back" size={22} color="#fff" />
           </Pressable>
 
-          {/* Top Right Action Icons */}
           <View style={styles.topRightIcons}>
             <Pressable style={styles.iconCircle}>
               <Ionicons name="share-outline" size={20} color="#fff" />
@@ -112,14 +182,17 @@ export default function DiaryHub({ visible, close, journalToggle }) {
               <Ionicons name="settings-outline" size={20} color="#fff" />
             </Pressable>
           </View>
-        </ImageBackground>
+        </View>
 
-        {/* --- White Bottom Sheet --- */}
         <View style={styles.sheetContainer}>
-          {/* Search Bar Section */}
           <View style={styles.searchSection}>
             <View style={styles.searchBar}>
-              <Ionicons name="search" size={20} color="#000" style={styles.searchIcon} />
+              <Ionicons
+                name="search"
+                size={20}
+                color="#000"
+                style={styles.searchIcon}
+              />
               <TextInput
                 placeholder="Search"
                 placeholderTextColor="#8E8E93"
@@ -132,33 +205,66 @@ export default function DiaryHub({ visible, close, journalToggle }) {
             </Pressable>
           </View>
 
-          {/* "Future Self" Bubble / Tag */}
           <View style={styles.bubbleContainer}>
             <View style={styles.futureSelfBubble}>
               <Text style={styles.futureSelfText}>Future Self</Text>
             </View>
           </View>
 
-          {/* Scrollable Photo Grid */}
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.gridScrollContainer}
           >
             <View style={styles.grid}>
-              {userEntries.map((photo) => (
-                <Pressable
-                  key={photo.id}
-                  style={[
-                    styles.photoWrapper
-                  ]}
-                >
-                  <Image source={{ uri: photo.media_url }} style={styles.photo} />
-                </Pressable>
-              ))}
+              {entries.map((entry) => {
+                const video = isVideo(entry.media_url);
+                const preview = video
+                  ? thumbnails[entry.id]
+                  : entry.media_url;
+
+                return (
+                  <Pressable
+                    key={entry.id}
+                    style={styles.photoWrapper}
+                    onPress={() => setViewing(entry)}
+                  >
+                    {preview ? (
+                      <Image source={{ uri: preview }} style={styles.photo} />
+                    ) : (
+                      <View style={styles.videoTile} />
+                    )}
+
+                    {video ? (
+                      <View style={styles.playBadge}>
+                        <Ionicons name="play" size={14} color="#fff" />
+                      </View>
+                    ) : null}
+
+                    {entry.prompt_text ? (
+                      <View style={styles.tilePrompt}>
+                        <Text style={styles.tilePromptText} numberOfLines={2}>
+                          {entry.prompt_text}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {entry.mood ? (
+                      <Text style={styles.tileMood}>
+                        {MOOD_EMOJI[entry.mood] ?? ""}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
             </View>
+
+            {entries.length === 0 ? (
+              <Text style={styles.empty}>
+                Nothing saved yet. Tap + to start.
+              </Text>
+            ) : null}
           </ScrollView>
 
-          {/* Translucent Floating Plus Button */}
           <Pressable
             style={({ pressed }) => [
               styles.translucentPlusButton,
@@ -176,22 +282,88 @@ export default function DiaryHub({ visible, close, journalToggle }) {
           </Pressable>
         </View>
       </View>
+
+      <Modal
+        visible={Boolean(viewing)}
+        animationType="fade"
+        onRequestClose={closeViewer}
+      >
+        <Pressable style={styles.viewer} onPress={closeViewer}>
+          {viewing && isVideo(viewing.media_url) ? (
+            <VideoView
+              player={player}
+              style={styles.viewerMedia}
+              contentFit="contain"
+              nativeControls={false}
+            />
+          ) : viewing?.media_url ? (
+            <Image
+              source={{ uri: viewing.media_url }}
+              style={styles.viewerMedia}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          {viewing?.prompt_text ? (
+            <View style={styles.viewerPrompt}>
+              <Text style={styles.viewerPromptText}>{viewing.prompt_text}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.viewerFooter}>
+            {viewing?.mood ? (
+              <Text style={styles.viewerMood}>
+                {MOOD_EMOJI[viewing.mood] ?? ""}
+              </Text>
+            ) : null}
+
+            {viewing?.created_at ? (
+              <Text style={styles.viewerDate}>
+                {new Date(viewing.created_at).toLocaleDateString([], {
+                  month: "long",
+                  day: "numeric",
+                })}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-
   container: {
     flex: 1,
-    backgroundColor: "#FFFC00", // Fallback color
+    backgroundColor: "#efdae4",
   },
+
   topHeader: {
     paddingTop: 50,
     paddingHorizontal: 16,
-    height: 250, // Height of header section
+    height: 250,
     justifyContent: "space-between",
+    position: "relative",
+    overflow: "hidden",
   },
+
+  // Absolute positioning fixes the background asset to start strictly at top: 0
+  bgAssetImage: {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "200%",
+  transform: [{ scaleX: 1.25 }], // Stretches width by 25% horizontally
+},
+
+  headerBitmoji: {
+    position: "absolute",
+    top: 60,
+    width: "100%",
+    height: "200%",
+  },
+
   iconCircle: {
     width: 40,
     height: 40,
@@ -200,6 +372,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   topRightIcons: {
     position: "absolute",
     top: 50,
@@ -207,7 +380,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
-  /* Sheet Container */
+
   sheetContainer: {
     flex: 1,
     backgroundColor: "#fff",
@@ -216,7 +389,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     overflow: "hidden",
   },
-  /* Search Bar */
+
   searchSection: {
     flexDirection: "row",
     alignItems: "center",
@@ -224,6 +397,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 12,
   },
+
   searchBar: {
     flex: 1,
     flexDirection: "row",
@@ -233,27 +407,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 40,
   },
+
   searchIcon: {
     marginRight: 6,
   },
+
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: "#000",
   },
+
   cancelButton: {
     paddingVertical: 4,
   },
+
   cancelText: {
     fontSize: 16,
     fontWeight: "600",
     color: "#000",
   },
-  /* "Future Self" Bubble */
+
   bubbleContainer: {
     paddingHorizontal: 16,
     marginBottom: 12,
   },
+
   futureSelfBubble: {
     backgroundColor: "#0099FF",
     borderRadius: 20,
@@ -261,35 +440,84 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   futureSelfText: {
     color: "#fff",
     fontWeight: "700",
     fontSize: 15,
   },
-  /* Photo Grid */
+
   gridScrollContainer: {
     paddingBottom: 90,
   },
+
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: GAP,
   },
+
   photoWrapper: {
     width: ITEM_SIZE,
     height: ITEM_SIZE * 1.35,
     backgroundColor: "#E0E0E0",
+    overflow: "hidden",
   },
-  selectedPhotoWrapper: {
-    borderWidth: 3,
-    borderColor: "#007AFF",
-  },
+
   photo: {
     width: "100%",
     height: "100%",
     resizeMode: "cover",
   },
-  /* Translucent Plus Button */
+
+  videoTile: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#2C2C2E",
+  },
+
+  playBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  tilePrompt: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+  },
+
+  tilePromptText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "600",
+    lineHeight: 13,
+  },
+
+  tileMood: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    fontSize: 18,
+  },
+
+  empty: {
+    textAlign: "center",
+    color: "#8E8E93",
+    marginTop: 40,
+  },
+
   translucentPlusButton: {
     position: "absolute",
     bottom: 24,
@@ -297,11 +525,58 @@ const styles = StyleSheet.create({
     width: 68,
     height: 68,
     borderRadius: 34,
-    backgroundColor: "rgba(35, 33, 33, 0.4)", // Semi-transparent overlay style
+    backgroundColor: "rgba(35, 33, 33, 0.4)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.6)",
     alignItems: "center",
     justifyContent: "center",
   },
+
+  viewer: {
+    flex: 1,
+    backgroundColor: "#000",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  viewerMedia: {
+    width: "100%",
+    height: "100%",
+  },
+
+  viewerPrompt: {
+    position: "absolute",
+    top: 70,
+    left: 20,
+    right: 20,
+    backgroundColor: "rgba(255,255,255,0.85)",
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+  },
+
+  viewerPromptText: {
+    color: "#111",
+    fontSize: 15,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  viewerFooter: {
+    position: "absolute",
+    bottom: 50,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+
+  viewerMood: {
+    fontSize: 26,
+  },
+
+  viewerDate: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 });
-// photo.selected && styles.selectedPhotoWrapper,
