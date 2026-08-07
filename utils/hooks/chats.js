@@ -62,11 +62,15 @@ export async function sendSnapToFriend({
 }
 
 // flips a snap to opened once its been viewed
-export async function markSnapOpened(messageId) {
+// bulk version of the above, for text messages that count as read
+// just by being on screen — .in() so the whole thread is one round trip
+export async function markMessagesOpened(messageIds) {
+  if (!messageIds?.length) return;
+
   const { error } = await supabase
     .from("messages")
     .update({ opened: true })
-    .eq("id", messageId);
+    .in("id", messageIds);
 
-  if (error) console.log("[chat] could not mark opened:", error.message);
+  if (error) console.log("[chat] could not mark messages opened:", error.message);
 }

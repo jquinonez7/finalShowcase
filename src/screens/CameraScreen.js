@@ -20,7 +20,7 @@ import PromptPill from "../components/PromptPill";
 import Prompts from "../components/Prompts";
 
 const YELLOW = "#FFFC00";
-const PURPLE = "#B69CFF";
+const PURPLE = "#B428FB";
 
 // how close two taps have to be to count as a double tap
 const DOUBLE_TAP_DELAY_MS = 300;
