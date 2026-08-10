@@ -2,7 +2,9 @@
 # My Journal
  
 Our project aims to raise awareness about mental health issues and foster meaningful social connections directly within Snapchat. Built as a integrated mental health hub, this feature helps Snapchatters stay connected with their support network while providing interactive tools for personal reflection and emotional processing.
- 
+
+<img width="1279" height="610" alt="Untitled design" src="https://github.com/user-attachments/assets/d10acb35-d513-4d5b-9ac7-9382e058e744" />
+
 ## Table of Contents
 
 - [Usage](#usage)
