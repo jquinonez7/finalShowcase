@@ -133,8 +133,34 @@ Camera access requires a physical device or a simulator with camera
 support — it will not work in the web preview. Please allow Expo Go to access your camera
 
 ## Usage
-Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
+Check out this brief demo on how to use the feature.
 
+### Toggle On &rarr; Choose a Prompt + Mood &rarr; Record!
+
+
+https://github.com/user-attachments/assets/ecd55911-0496-44c3-9460-c82389d01f38
+
+
+
+
+
+### Save Entries to the Hub
+<table>
+  <tr>
+    <td><img width="130" height="288" alt="IMG_2677 2" src="https://github.com/user-attachments/assets/c022c32e-e224-4e3c-bce2-0f1c9dd69db5" /></td>
+    <td><img width="130" height="288" alt="Simulator Screenshot - iPhone 17 - 2026-08-10 at 08 54 53" src="https://github.com/user-attachments/assets/2dcb79af-5e57-4146-ac02-99d9f3e198c7" /></td>
+    <td><img width="130" height="288" alt="Simulator Screenshot - iPhone 17 - 2026-08-10 at 08 55 05" src="https://github.com/user-attachments/assets/fec4b61c-0ad4-409b-b9a4-ce126811a9d5" /></td>
+  </tr>
+</table>
+### Send Entries to Friends & Friend Check In
+<table>
+  <tr>
+    <td><img width="130" height="288" alt="IMG_2679 2" src="https://github.com/user-attachments/assets/ca52e5af-c244-4d6f-bd7d-8299e043a5e2" /></td>
+    <td><img width="130" height="288" alt="Simulator Screenshot - iPhone 17 - 2026-08-10 at 08 55 27" src="https://github.com/user-attachments/assets/cf18cf99-2923-4f78-88f7-e9b4e1793ac4" /></td>
+    <td><img width="130" height="288" alt="Simulator Screenshot - iPhone 17 - 2026-08-10 at 08 56 04" src="https://github.com/user-attachments/assets/2be8613c-0f7a-4cdf-8884-c075ec75cca5" /></td>
+    <td><img width="130" height="288" alt="Simulator Screenshot - iPhone 17 - 2026-08-10 at 08 56 15" src="https://github.com/user-attachments/assets/91cf0f6d-06e7-4830-ac6b-d13aa5d60bc6" /></td>
+  </tr>
+</table>
 (back to top)
 
 License
