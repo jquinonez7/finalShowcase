@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useVideoPlayer, VideoView } from "expo-video";
 
 import { supabase } from "../../utils/hooks/supabase";
 import { markSnapOpened, markMessagesOpened } from "../../utils/hooks/chats";
@@ -21,6 +22,12 @@ import { markSnapOpened, markMessagesOpened } from "../../utils/hooks/chats";
 const SELF_ACCENT = "#FF2D55"; // red, "ME"
 const OTHER_ACCENT = "#00B7FF"; // blue, everyone else
 const SNAP_COLOR = "#FF2D55"; // real Snapchat colors snaps by content type, not sender
+
+// uploadMedia always writes video as .mp4, so the extension is enough to
+// tell a snap's type without adding a column
+function isVideoUrl(url) {
+  return typeof url === "string" && /\.(mp4|mov)(\?|$)/i.test(url);
+}
 
 // groups messages under a day label instead of stamping every message
 function dayLabel(dateString) {
@@ -72,6 +79,24 @@ export default function ConversationScreen({ route, navigation }) {
   const [viewing, setViewing] = useState(null);
 
   const listRef = useRef(null);
+
+  // null for photos, which leaves the player idle and renders the Image
+  // branch instead
+  const viewingVideoUrl =
+    viewing && isVideoUrl(viewing.media_url) ? viewing.media_url : null;
+
+  const snapPlayer = useVideoPlayer(viewingVideoUrl, (player) => {
+    player.loop = true;
+  });
+
+  // closing the modal drops the url back to null, which pauses it — otherwise
+  // audio keeps going behind the thread
+  useEffect(() => {
+    if (!snapPlayer) return;
+
+    if (viewingVideoUrl) snapPlayer.play();
+    else snapPlayer.pause();
+  }, [viewingVideoUrl, snapPlayer]);
 
   // who is sending, so messages can be split into mine and theirs
   useEffect(() => {
@@ -362,14 +387,27 @@ export default function ConversationScreen({ route, navigation }) {
         animationType="fade"
         onRequestClose={() => setViewing(null)}
       >
-        <Pressable style={styles.viewer} onPress={() => setViewing(null)}>
-          {viewing?.media_url ? (
+        <View style={styles.viewer}>
+          {viewingVideoUrl ? (
+            <VideoView
+              player={snapPlayer}
+              style={styles.viewerMedia}
+              contentFit="contain"
+              nativeControls={false}
+            />
+          ) : viewing?.media_url ? (
             <Image
               source={{ uri: viewing.media_url }}
-              style={styles.viewerImage}
+              style={styles.viewerMedia}
               resizeMode="contain"
             />
           ) : null}
+
+          {/* over the media, since VideoView swallows touches of its own */}
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setViewing(null)}
+          />
 
           {/* the prompt it was answering, so the snap has context */}
           {viewing?.prompt_text ? (
@@ -377,7 +415,7 @@ export default function ConversationScreen({ route, navigation }) {
               <Text style={styles.viewerPromptText}>{viewing.prompt_text}</Text>
             </View>
           ) : null}
-        </Pressable>
+        </View>
       </Modal>
     </KeyboardAvoidingView>
   );
@@ -590,7 +628,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  viewerImage: {
+  viewerMedia: {
     width: "100%",
     height: "100%",
   },
