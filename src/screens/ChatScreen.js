@@ -88,7 +88,7 @@ function getMessageStatus(message, currentUserId) {
 
   if (sentByMe) {
     return {
-      text: isOpened ? "" : "Delivered",
+      text: isOpened ? "Opened" : "Delivered",
       color,
       icon: isOpened ? "send-outline" : "send",
     };
