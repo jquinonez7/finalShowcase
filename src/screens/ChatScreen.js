@@ -96,7 +96,7 @@ function getMessageStatus(message, currentUserId) {
 
   if (isOpened) {
     return {
-      text: "Recieved",
+      text: "Received",
       color,
       icon: "square-outline",
     };
